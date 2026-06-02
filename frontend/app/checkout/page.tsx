@@ -15,6 +15,9 @@ import {
 import { ErrorFallback } from "@/app/components/ErrorFallback";
 import { CheckoutClient } from "@/app/components/CheckoutClient";
 import { requireUser } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { BACKEND_URL } from "@/lib/api";
+import { PRICE_PER_SEAT_LPS } from "@/lib/seats";
 
 export const metadata: Metadata = {
   title: `${copy.checkout.eyebrow} — ${copy.brand.wordmark}`,
@@ -30,7 +33,7 @@ export default async function CheckoutPage({
 }: {
   searchParams: SearchParams;
 }) {
-  await requireUser("/checkout");
+  const user = await requireUser("/checkout");
   const params = await searchParams;
   const seatIds = parseSeats(params.seats);
   const expiresAt = parseExpires(params.expires);
@@ -47,6 +50,18 @@ export default async function CheckoutPage({
   const venueLine = formatVenueAddress(movie);
   const total = formatTotalLPS(seatIds.length);
   const perSeat = formatPriceLPS();
+
+  const totalLpsNum = seatIds.length * PRICE_PER_SEAT_LPS;
+  const cookieHeader = (await cookies()).toString();
+  const orderRes = await fetch(`${BACKEND_URL}/api/orders/pending`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: cookieHeader },
+    body: JSON.stringify({ totalLps: totalLpsNum, guestName: user.name ?? user.email }),
+    cache: "no-store",
+  });
+  if (!orderRes.ok) return <ErrorFallback />;
+  const { code: orderCode } = (await orderRes.json()) as { code: string };
+  const bankRef = process.env.NEXT_PUBLIC_BANK_ACCOUNT_REF ?? "Cuenta pendiente";
 
   return (
     <main
@@ -111,8 +126,10 @@ export default async function CheckoutPage({
         <CheckoutClient
           expiresAt={expiresAt}
           seatCount={seatIds.length}
-          totalLabel={total}
           seatIds={seatIds}
+          totalLps={totalLpsNum}
+          orderCode={orderCode}
+          bankRef={bankRef}
         />
 
         {/* Back link */}
