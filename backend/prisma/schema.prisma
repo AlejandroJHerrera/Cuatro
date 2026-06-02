@@ -31,6 +31,12 @@ enum OrderStatus {
   expired
 }
 
+enum UserRole {
+  customer
+  doorStaff
+  admin
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -41,8 +47,10 @@ model User {
   passwordHash String? // null for OAuth accounts
   createdAt    DateTime     @default(now())
 
-  orders Order[]
-  holds  SeatHold[]
+  role         UserRole     @default(customer)
+  orders       Order[]
+  holds        SeatHold[]
+  redemptions  Ticket[]     @relation("Redemptions")
 
   @@unique([provider, providerId])
 }
@@ -99,7 +107,10 @@ model Order {
   code            String      @unique
   userId          String
   user            User        @relation(fields: [userId], references: [id])
-  stripeSessionId String?     @unique
+  verificationAttempts Int       @default(0)
+  verifiedAt           DateTime?
+  rejectionReason      String?
+  paymentReceipt       PaymentReceipt?
   status          OrderStatus @default(pending)
   totalLps        Int
   guestName       String // printed on stubs + appears on the door list
@@ -114,8 +125,20 @@ model Ticket {
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   seatId    String   @unique
   seat      Seat     @relation(fields: [seatId], references: [id])
-  userId    String
+  userId         String
+  qrPayload      String   @unique
+  redeemedAt     DateTime?
+  redeemedBy     String?
+  redeemedByUser User?    @relation("Redemptions", fields: [redeemedBy], references: [id])
   createdAt DateTime @default(now())
 
   @@index([orderId])
+}
+
+model PaymentReceipt {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  txnId      String   @unique
+  verifiedAt DateTime @default(now())
 }
