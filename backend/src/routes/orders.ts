@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
+import { env } from "../env.js";
 import { requireAuth } from "../auth/routes.js";
 import { renderQrPng } from "../services/qrRender.js";
 import { sendOrderConfirmation } from "../services/email.js";
@@ -30,11 +31,10 @@ ordersRouter.post("/:code/resend-email", requireAuth, async (req, res) => {
   const movie = await prisma.movie.findFirst();
   if (!movie) return res.status(500).json({ error: "no-movie" });
 
-  const attachments = await Promise.all(
+  const qrAttachments = await Promise.all(
     order.tickets.map(async (t) => ({
       filename: `qr-${t.seat.label}.png`,
       content: await renderQrPng(t.qrPayload!),
-      cid: `qr-${t.seat.label}`,
     })),
   );
 
@@ -46,9 +46,12 @@ ordersRouter.post("/:code/resend-email", requireAuth, async (req, res) => {
       showtimeIso: movie.startsAt.toISOString(),
       venueName: movie.venueName,
       totalLps: order.totalLps,
-      seats: order.tickets.map((t) => ({ label: t.seat.label, qrCid: `qr-${t.seat.label}` })),
+      seats: order.tickets.map((t) => ({
+        label: t.seat.label,
+        qrUrl: `${env.BACKEND_URL}/api/tickets/${order.code}/${encodeURIComponent(t.seat.label)}/qr.png`,
+      })),
     },
-    qrAttachments: attachments,
+    qrAttachments,
   });
 
   return res.json({ ok: true });

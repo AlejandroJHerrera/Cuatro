@@ -11,7 +11,7 @@ const FROM = "Cuatro <onboarding@resend.dev>";
 export async function sendOrderConfirmation(args: {
   to: string;
   props: ConfirmationProps;
-  qrAttachments: { filename: string; content: Buffer; cid: string }[];
+  qrAttachments: { filename: string; content: Buffer }[];
 }) {
   const html = await render(OrderConfirmationEmail(args.props));
   return resend.emails.send({
@@ -22,7 +22,6 @@ export async function sendOrderConfirmation(args: {
     attachments: args.qrAttachments.map((a) => ({
       filename: a.filename,
       content: a.content.toString("base64"),
-      content_id: a.cid,
     })),
   } as any);
 }

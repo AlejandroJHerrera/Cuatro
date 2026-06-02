@@ -16,8 +16,9 @@ import { ErrorFallback } from "@/app/components/ErrorFallback";
 import { CheckoutClient } from "@/app/components/CheckoutClient";
 import { requireUser } from "@/lib/auth";
 import { cookies } from "next/headers";
-import { BACKEND_URL } from "@/lib/api";
 import { PRICE_PER_SEAT_LPS } from "@/lib/seats";
+
+const SERVER_API = process.env.API_URL ?? "http://localhost:4000";
 
 export const metadata: Metadata = {
   title: `${copy.checkout.eyebrow} — ${copy.brand.wordmark}`,
@@ -53,7 +54,7 @@ export default async function CheckoutPage({
 
   const totalLpsNum = seatIds.length * PRICE_PER_SEAT_LPS;
   const cookieHeader = (await cookies()).toString();
-  const orderRes = await fetch(`${BACKEND_URL}/api/orders/pending`, {
+  const orderRes = await fetch(`${SERVER_API}/api/orders/pending`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: cookieHeader },
     body: JSON.stringify({ totalLps: totalLpsNum, guestName: user.name ?? user.email }),

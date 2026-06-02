@@ -248,3 +248,13 @@
   100% { opacity: 0; }
 }
 .animate-scan-fadeout { animation: scan-fadeout 1.5s forwards; }
+
+@keyframes scan-pop {
+  0%   { opacity: 0; transform: translateY(24px) scale(0.94); }
+  10%  { opacity: 1; transform: translateY(0)   scale(1); }
+  82%  { opacity: 1; transform: translateY(0)   scale(1); }
+  100% { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+.animate-scan-pop {
+  animation: scan-pop 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

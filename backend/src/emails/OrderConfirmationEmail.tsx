@@ -7,7 +7,7 @@ export type ConfirmationProps = {
   showtimeIso: string;
   venueName: string;
   totalLps: number;
-  seats: { label: string; qrCid: string }[];
+  seats: { label: string; qrUrl: string }[];
 };
 
 export function OrderConfirmationEmail(p: ConfirmationProps) {
@@ -23,7 +23,7 @@ export function OrderConfirmationEmail(p: ConfirmationProps) {
           {p.seats.map((s) => (
             <Section key={s.label} style={{ borderTop: "1px solid #333", padding: "16px 0", textAlign: "center" }}>
               <Text style={{ fontSize: 24, margin: 0 }}>{s.label.replace(/^(.)(\d+)$/, "$1·$2")}</Text>
-              <Img src={`cid:${s.qrCid}`} alt={`QR ${s.label}`} width={180} height={180} />
+              <Img src={s.qrUrl} alt={`QR ${s.label}`} width={180} height={180} />
             </Section>
           ))}
           <Text style={{ marginTop: 24, fontSize: 12 }}>En la puerta verificamos por nombre y escaneamos el QR de cada butaca.</Text>

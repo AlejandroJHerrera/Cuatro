@@ -10,6 +10,7 @@ import { myTicketsRouter } from "./routes/myTickets.js";
 import { checkoutVerifyRouter } from "./routes/checkoutVerify.js";
 import { ordersRouter } from "./routes/orders.js";
 import { adminRouter } from "./routes/admin.js";
+import { ticketQrRouter } from "./routes/ticketQr.js";
 import { ClaudeVerifier } from "./services/paymentVerifier.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { passport } from "./auth/passport.js";
@@ -25,10 +26,12 @@ const allowedOrigins =
   env.NODE_ENV === "development"
     ? [env.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"]
     : [env.FRONTEND_URL];
+const devLanOriginRe = /^http:\/\/(?:192\.168|10|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}:\d+$/;
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      if (env.NODE_ENV === "development" && devLanOriginRe.test(origin)) return cb(null, true);
       cb(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
@@ -67,6 +70,7 @@ app.use(
 );
 app.use("/api/orders", ordersRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/tickets", ticketQrRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found." });

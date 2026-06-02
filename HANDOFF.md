@@ -29,7 +29,7 @@ Project root: `/Users/alejandro/Desktop/Cuatro/`
 | Auth | Google OAuth + email/password via Passport.js + Postgres-backed session cookie. Google strategy registered conditionally on `GOOGLE_CLIENT_ID/SECRET`. |
 | Payments | **Bank transfer + Claude Sonnet 4.6 verification.** Customer uploads a receipt screenshot to `POST /api/checkout/verify`; the route calls the Anthropic SDK (`@anthropic-ai/sdk`) with the image, validates via single-tool-use, converts holds → Tickets, and emits HMAC-SHA256-signed QR payloads. Screenshots are never persisted (multer `memoryStorage`). |
 | Email | Resend + `@react-email/components`. Three templates: customer confirmation (with inline QR PNGs), internal payment archive, customer rejection. |
-| Door entry | Per-seat HMAC-signed QR codes, scanned by door staff via `/admin/scan` (jsqr camera viewfinder). Admins fall back to manual check-in on `/admin/door`. |
+| Door entry | Per-seat HMAC-signed QR codes, scanned by door staff via `/admin/scan` (jsqr camera viewfinder + floating verdict toast with smooth pop-in/out). Admins fall back to manual check-in on `/admin/door`. |
 | Testing | Vitest + supertest backend harness. 25 tests across 8 files. Truncating Postgres `cuatro_test` DB on `:5433`. |
 
 Max seats per order: **8**. Price: **L 12.00** per seat. Constants in [`frontend/lib/seats.ts`](frontend/lib/seats.ts): `PRICE_PER_SEAT_LPS`, `formatTotalLPS`, `formatPriceLPS`.
@@ -96,7 +96,11 @@ backend/
     │   │                            + POST /api/orders/:code/resend-email
     │   ├── admin.ts                POST /api/admin/scan, GET /api/admin/door,
     │   │                            POST /api/admin/manual-checkin (all role-gated)
-    │   └── admin.test.ts           4 tests (valid / already-used / tampered / wrong-role)
+    │   ├── admin.test.ts           4 tests (valid / already-used / tampered / wrong-role)
+    │   └── ticketQr.ts             GET /api/tickets/:code/:seat/qr.png — public PNG
+    │                                of the signed QR, re-rendered from stored qrPayload.
+    │                                Used by the customer email's <img> tags so QRs render
+    │                                inline in Gmail/Outlook/etc.
     ├── services/
     │   ├── movie.ts                Projects Movie row + computes status
     │   ├── seatStatus.ts           Joins Ticket + SeatHold, lazily purges expired holds
@@ -157,6 +161,7 @@ backend/
 | POST | `/api/admin/scan` | `{payload}` → verifies HMAC, stamps `redeemedAt/redeemedBy`, returns `{ok, seat, guestName, alreadyUsed}`. 400 invalid. Role `doorStaff` or `admin`. |
 | GET | `/api/admin/door` | Full manifest `{totals, orders:[{code, guestName, totalLps, tickets:[{id,seat,redeemedAt}]}]}`. Role `admin`. |
 | POST | `/api/admin/manual-checkin` | `{ticketId}`. Same redemption stamp as scan. Role `admin`. |
+| GET | `/api/tickets/:code/:seat/qr.png` | Public PNG of the per-seat QR (re-rendered from `Ticket.qrPayload`). 404 if order isn't paid. 24h cached. Referenced from email `<img>` so QRs render inline in any client. |
 
 ## Frontend layout
 
@@ -242,7 +247,9 @@ Google OAuth (only with env keys) + `<EmailAuthForm>` with sign-in/sign-up toggl
 Active vs expired variants, swaps without re-fetching. Provider-neutral copy.
 
 ### Admin scan (`/admin/scan`) ⭐ new
-`requireRole(["doorStaff","admin"])`. Full-screen camera viewfinder (`getUserMedia` + `jsqr` 250ms tick + 2s cooldown after a successful read). On scan, POSTs `/api/admin/scan` and shows a 1.5s overlay (`bg-emerald-700` green, `bg-amber-600` yellow for already-used, `bg-red-700` red for invalid) before fading via `animate-scan-fadeout`. Bottom strip shows last 5 scans with colored dots.
+`requireRole(["doorStaff","admin"])`. Full-screen camera viewfinder (`getUserMedia` + `jsqr` 250ms tick + 2s cooldown after a successful read). On scan, POSTs `/api/admin/scan` and shows a **floating verdict toast** centered near the middle of the viewfinder: emerald **ADELANTE · seat · name** with checkmark icon, amber **YA ESCANEADO** with warning icon, or red **INVÁLIDO** with X icon. Toast uses `animate-scan-pop` (slide-up + scale 0.94→1, holds, then slide-down + fade — 2.4s, `cubic-bezier(0.22, 1, 0.36, 1)`). A scan-id counter keys the toast so identical back-to-back verdicts re-animate cleanly. Bottom strip shows last 5 scans with colored dots.
+
+**Camera requires HTTPS** (`getUserMedia` is a secure-context API). Works fine on `localhost`, fails on plain `http://192.168.x.x`. For LAN/phone testing, tunnel the frontend via ngrok — see "Phone testing via ngrok" below.
 
 ### Admin door (`/admin/door`) ⭐ new
 `requireRole(["admin"])`. Header counters (VENDIDAS / ESCANEADAS / capacity). Live search by name or code. Per-order row with per-seat colored dot + `MARCAR ENTRADA ✓` button (`POST /api/admin/manual-checkin`, optimistic UI). Fallback for when a phone is dead.
@@ -251,7 +258,7 @@ Active vs expired variants, swaps without re-fetching. Provider-neutral copy.
 
 Rendered via `@react-email/components`, sent via Resend.
 
-- **OrderConfirmationEmail** — to customer. Subject: `Tu reservación CUATRO · <code>`. Per-seat sections with `<img src="cid:qr-A7">` referencing inline PNG attachments (rendered by `qrRender.renderQrPng`).
+- **OrderConfirmationEmail** — to customer. Subject: `Tu reservación CUATRO · <code>`. Per-seat sections with `<img src="${BACKEND_URL}/api/tickets/<code>/<seat>/qr.png">` (the public route in [`routes/ticketQr.ts`](backend/src/routes/ticketQr.ts)). Also attaches each QR as a downloadable `qr-<seat>.png` so customers always have savable files even when the inline image fails to load (e.g. mail client blocks remote images). The original CID/inline-attachment approach was dropped — Gmail webmail rendered it as broken icons.
 - **PaymentArchiveEmail** — to `PAYMENT_ARCHIVE_EMAIL`. Subject: `[CUATRO] <code> · L<amount> · <guestName>`. Includes verdict metadata. Screenshot attached **only when verdict is rejected** (debug aid).
 - **OrderRejectionEmail** — to customer, only on the async-pending reject path. Includes the reason in Spanish and a retry URL to `/checkout?retry=<code>`.
 
@@ -334,32 +341,101 @@ To exercise local states without a real LLM call:
 - **Empty `/my-tickets`** — the default for new accounts. Insert a manual order via Prisma Studio to test the populated layout.
 - **Cancel variants** — visit `/cancel?seats=C7,C8&expires=<now+30000>` and wait.
 
+### Phone testing via ngrok (camera + cross-device flows)
+
+`/admin/scan` and any test where a customer flow needs to happen on a real phone require **HTTPS** (camera) and a host the phone can resolve (not `localhost`). Setup:
+
+```bash
+brew install ngrok
+ngrok config add-authtoken <token>          # one time
+ngrok http 3000                              # tunnels only the frontend
+```
+
+The frontend proxies all `/api/*` requests to the backend via a Next.js rewrite in [`frontend/next.config.ts`](frontend/next.config.ts). That means **a single ngrok tunnel covers both surfaces** — the phone hits `https://<your-tunnel>.ngrok-free.dev`, Next sees `/api/...`, rewrites to `http://localhost:4000/api/...` on the laptop. No CORS, no mixed-content, no second tunnel.
+
+Set these env vars to the ngrok URL so emails + redirects use the public host:
+
+- `backend/.env` → `BACKEND_URL=https://<tunnel>.ngrok-free.dev` (QR image URLs in emails), `FRONTEND_URL=https://<tunnel>.ngrok-free.dev` (rejection email retry links).
+- `frontend/.env.local` → leave `NEXT_PUBLIC_BACKEND_URL=` blank (browser uses same-origin → rewrite). Keep `API_URL=http://localhost:4000` for Next server components.
+
+Restart both dev servers, point the phone at the ngrok URL, click through the warning page, sign in. iOS Safari will prompt for camera permission on `/admin/scan` — allow.
+
+**Free-tier caveat:** ngrok gives one static subdomain. Every restart can change the URL — update the two env files accordingly. The CORS rule in [`backend/src/index.ts`](backend/src/index.ts) already permits any `192.168.x.x` / `10.x.x.x` / `172.16-31.x.x` origin in dev so direct LAN access still works when you don't tunnel.
+
+### Same-origin pattern (browser ↔ backend)
+
+The frontend has two BACKEND_URL conventions that are easy to confuse:
+
+- **Server components** (e.g. [`app/admin/door/page.tsx`](frontend/app/admin/door/page.tsx), [`app/checkout/page.tsx`](frontend/app/checkout/page.tsx), [`lib/movie.ts`](frontend/lib/movie.ts)) call the backend **directly** using `process.env.API_URL` (`http://localhost:4000` in dev, the real backend in prod). Node `fetch` needs an absolute URL.
+- **Client components** (e.g. [`ScanClient.tsx`](frontend/app/admin/scan/ScanClient.tsx), [`CheckoutClient.tsx`](frontend/app/components/CheckoutClient.tsx), [`EmailAuthForm.tsx`](frontend/app/components/EmailAuthForm.tsx)) import `BACKEND_URL` from [`lib/api.ts`](frontend/lib/api.ts) which defaults to **empty string** — same-origin. The Next rewrite proxies `/api/*` to the backend.
+
+If you ever see *"Failed to parse URL from /api/..."*, you're using the empty-string `BACKEND_URL` in a server component. Switch to `process.env.API_URL` and it's fixed.
+
 To enable Google OAuth locally:
 
 1. Create OAuth credentials at https://console.cloud.google.com/apis/credentials (Web app).
 2. Authorized redirect URI: `http://localhost:4000/api/auth/google/callback`.
 3. Drop `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` into `backend/.env` and restart.
 
-## What's left
+## Current state (as of 2026-06-02 evening)
 
-The payment-pivot plan is **fully implemented** (19/19 tasks landed). No further coding work is required to make the flow functional; what remains is operational.
+The payment-pivot plan is **fully implemented** (19/19 tasks landed). On top of that, this session added:
 
-### Pre-launch operational checklist
+- **Hosted-URL QR delivery** ([`routes/ticketQr.ts`](backend/src/routes/ticketQr.ts) + email template swap) so QRs render inline in Gmail. PNG attachments are still sent alongside as a fallback.
+- **Next.js rewrite proxy** ([`frontend/next.config.ts`](frontend/next.config.ts)) so the browser only ever talks to the same origin as the frontend. Enables single-tunnel ngrok for phone testing and removes mixed-content / CORS issues.
+- **Smooth verdict toast** in `/admin/scan` — replaced the full-screen color slam with a centered card that pops in (`animate-scan-pop` keyframe) with icon + status + seat·name.
+- **Dev LAN CORS regex** in [`backend/src/index.ts`](backend/src/index.ts) so a phone on the LAN can reach the dev backend directly when not tunneling.
+- **Resend sandbox sender** (`onboarding@resend.dev`) in [`backend/src/services/email.ts`](backend/src/services/email.ts) — works for testing to the Resend account owner's email, **not for real customers**. See Tier 1 below.
 
-1. **Provision real API keys.** `ANTHROPIC_API_KEY` (Anthropic Console), `RESEND_API_KEY` (Resend dashboard, verified sender domain). Drop into `backend/.env` (gitignored).
-2. **Final bank account details.** Set `BANK_ACCOUNT_REF` in `backend/.env` AND `NEXT_PUBLIC_BANK_ACCOUNT_REF` in `frontend/.env.local` to the actual production values. They are mirrored intentionally — the LLM checks against the backend value while the frontend renders the customer-facing copy.
-3. **Real end-to-end smoke test.** Sign in → pick seats → upload a real Tigo Money / bank screenshot → check email delivery → scan the QR from another phone on `/admin/scan`. Document any verdict false-positives/negatives and tune `SYSTEM_PROMPT` in `services/paymentVerifier.ts`.
-4. **Promote staff accounts.** Create door staff users via `/signin`, then promote via Prisma Studio. There is no admin UI for role management yet — explicitly out of scope for v1.
-5. **CORS in prod.** `backend/src/index.ts` allows `:3000` + `:3001` in dev; tighten to a single explicit origin in production.
+No further coding is required to make the v1 flow functional. What follows is the production-ready punch list.
 
-### Operational follow-ups (optional)
+## Production roadmap
 
-- **`/admin/staff` surface** for role management — currently manual via Prisma Studio. Defer unless adding more staff than is manageable by hand.
-- **`POST /api/admin/orders/:code/mark-paid`** — manual override for edge-case cash-at-door payments. Out of v1 scope; current flow expects every paid order to go through verification.
-- **Header user menu** — sign-in indicator + logout button. `POST /api/auth/logout` is wired; just no surface yet.
-- **`OAuthButton` glyph** — currently a stylized monochrome G. Replace with the official multi-color Google G if brand approval comes through.
-- **`PosterPlaceholder.tsx`** — unused, can delete.
-- **DESIGN.md is still seeded** (`<!-- SEED -->`). Re-run `/impeccable document` in scan mode once the visual system is fully settled.
+### Tier 1 — Blockers before any real customer can buy a ticket
+
+1. **Rotate leaked credentials** — the Resend API key and the ngrok authtoken were both pasted in a chat transcript and should be considered compromised. Revoke + regenerate in their respective dashboards.
+2. **Verify a real sending domain on Resend.** Buy a domain (e.g. `cuatrofilms.com` or similar) if you don't have one, add Resend's SPF + DKIM + DMARC records at your registrar, wait for "Verified" in the Resend dashboard. Then swap `FROM` in [`email.ts`](backend/src/services/email.ts:9) off `onboarding@resend.dev` to `no-reply@yourdomain.com`. Without this, customer confirmations only deliver to the Resend account owner.
+3. **Real bank account details.** Update `BANK_ACCOUNT_REF` in `backend/.env` **and** `NEXT_PUBLIC_BANK_ACCOUNT_REF` in `frontend/.env.local` to production values. They must match exactly — Claude cross-checks the screenshot against the backend value while the frontend renders the customer-facing copy.
+4. **Switch off FakeVerifier.** [`backend/src/index.ts`](backend/src/index.ts) currently uses `new FakeVerifier({ ok: true, txnId: "TXN-DEV-1", senderName: "Prueba" })` (every screenshot auto-approves). Restore `new ClaudeVerifier()` and set a real `ANTHROPIC_API_KEY`.
+5. **Promote at least one admin account.** Sign up via the UI → Prisma Studio → set `User.role = admin` (and `doorStaff` for additional staff).
+6. **Real end-to-end smoke test with the real verifier.** Pick seats → upload a real Banco Atlántida / Tigo Money screenshot → verify approval → check email → scan QR from another phone. Document any false-positives/negatives and tune `SYSTEM_PROMPT` in [`paymentVerifier.ts`](backend/src/services/paymentVerifier.ts).
+
+### Tier 2 — Hosting + deployment
+
+7. **Pick a backend host.** Railway, Render, or Fly.io are the obvious candidates — managed Postgres + Node in one place with automatic HTTPS. Provision a managed Postgres, set `DATABASE_URL`, run `npx prisma migrate deploy` on first boot, then `npm run db:seed` once to insert the movie + 121 seats.
+8. **Pick a frontend host.** Vercel is the natural Next.js choice — GitHub-connected, automatic HTTPS, edge caching. Free tier handles a single-show scale comfortably.
+9. **Set production env vars** on both hosts:
+   - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://yourdomain.com`, `BACKEND_URL=https://api.yourdomain.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
+   - Frontend: `API_URL=https://api.yourdomain.com` (server-side fetches). Leave `NEXT_PUBLIC_BACKEND_URL=` blank to keep the same-origin pattern via the rewrite, OR set it to the backend URL if you've decided to call directly.
+10. **Decide: keep the Next rewrite proxy in production, or call the backend directly?**
+    - **Keep rewrite** = single origin, no CORS in prod, slightly more latency. Recommended for v1.
+    - **Direct calls** = need to tighten the dev-only LAN regex in [`backend/src/index.ts`](backend/src/index.ts) and configure prod CORS to the exact frontend origin. More surface to misconfigure.
+11. **Sessions + cookies in production.** [`auth/session.ts`](backend/src/auth/session.ts) needs `cookie.secure = true` and `cookie.sameSite = "lax"` (same-origin) or `"none"` (cross-origin). Test sign-in works in prod before announcing.
+
+### Tier 3 — Hardening + observability
+
+12. **Tighten CORS in prod.** Dev LAN regex is gated behind `NODE_ENV === "development"`, but double-check `FRONTEND_URL` env exactly matches the prod origin.
+13. **Error monitoring.** Wire Sentry into backend (`@sentry/node`) and frontend (`@sentry/nextjs`). ~15 min each, free tier handles small scale. Without this, silent failures (Resend rejections, Claude API errors, DB drops) won't surface until a customer complains.
+14. **Surface Resend errors.** Today [`checkoutVerify.ts`](backend/src/routes/checkoutVerify.ts) doesn't check the result of `mailer.confirmation(...)`. Wrap each send in try/catch and log `result.error`. The `<ResendEmailButton>` is already a customer-facing escape hatch — make sure it works in prod.
+15. **Rate limit `/api/checkout/verify`.** Expensive call (Claude API) behind auth — a hostile authenticated user could still drain Anthropic credit. `express-rate-limit`: 10 attempts per user per 10 min.
+16. **DB backups.** Whatever host you pick, enable nightly automated backups. Railway/Render/Fly all offer this in one click.
+17. **DMARC + reply-to.** Add a DMARC TXT record once the Resend domain is verified (`p=none` initially, then `p=quarantine` after monitoring). Set `reply_to` in the Resend send calls to a real human inbox (`hola@yourdomain.com` → Cloudflare Email Routing → forward to your gmail).
+18. **Header user menu.** Sign-in indicator + logout button. `POST /api/auth/logout` is wired; just no UI surface yet. Customers will ask.
+19. **Health-check ping.** UptimeRobot (free) hitting `GET /health` every 5 min. Page you if the backend dies.
+
+### Tier 4 — Nice-to-have, post-launch
+
+- **`/admin/staff` UI** for role management — currently manual via Prisma Studio.
+- **`POST /api/admin/orders/:code/mark-paid`** — manual override for cash-at-door edge cases.
+- **Real Google G glyph** on `OAuthButton` — currently a stylized monochrome placeholder.
+- **Delete `PosterPlaceholder.tsx`** — unused.
+- **Re-run `/impeccable document`** to lock the design system (DESIGN.md is still `<!-- SEED -->`).
+
+### Suggested order
+
+- **Week 1:** Tier 1 + Tier 2 → app live at a real URL, end-to-end purchase works.
+- **Week 2 (pre-launch):** Tier 3 → silent failures become loud, hostile users get blocked.
+- **Post-launch:** Tier 4 as demand surfaces.
 
 ## Test accounts in dev DB
 

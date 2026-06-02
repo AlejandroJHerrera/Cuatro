@@ -205,11 +205,12 @@ async function finalizeAndEmail(args: {
   });
 
   const movie = (await prisma.movie.findFirst())!;
+
   const qrAttachments = await Promise.all(
-    finalized.tickets.map(async (t) => {
-      const png = await renderQrPng(t.qrPayload!);
-      return { filename: `qr-${t.seat.label}.png`, content: png, cid: `qr-${t.seat.label}` };
-    }),
+    finalized.tickets.map(async (t) => ({
+      filename: `qr-${t.seat.label}.png`,
+      content: await renderQrPng(t.qrPayload!),
+    })),
   );
 
   await args.mailer.confirmation({
@@ -220,7 +221,10 @@ async function finalizeAndEmail(args: {
       showtimeIso: movie.startsAt.toISOString(),
       venueName: movie.venueName,
       totalLps: args.totalLps,
-      seats: finalized.tickets.map((t) => ({ label: t.seat.label, qrCid: `qr-${t.seat.label}` })),
+      seats: finalized.tickets.map((t) => ({
+        label: t.seat.label,
+        qrUrl: `${env.BACKEND_URL}/api/tickets/${args.order.code}/${encodeURIComponent(t.seat.label)}/qr.png`,
+      })),
     },
     qrAttachments,
   });

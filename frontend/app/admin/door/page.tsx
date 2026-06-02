@@ -1,10 +1,11 @@
 import { cookies } from "next/headers";
 import { requireRole } from "@/lib/auth";
-import { BACKEND_URL } from "@/lib/api";
 import { DoorClient, type Door } from "./DoorClient";
 import { ErrorFallback } from "@/app/components/ErrorFallback";
 
 export const dynamic = "force-dynamic";
+
+const SERVER_API = process.env.API_URL ?? "http://localhost:4000";
 
 export default async function DoorPage() {
   await requireRole(["admin"], "/admin/door");
@@ -12,7 +13,7 @@ export default async function DoorPage() {
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join("; ");
-  const res = await fetch(`${BACKEND_URL}/api/admin/door`, {
+  const res = await fetch(`${SERVER_API}/api/admin/door`, {
     headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     cache: "no-store",
   });
