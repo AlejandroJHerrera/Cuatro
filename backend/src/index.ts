@@ -7,6 +7,8 @@ import { movieRouter } from "./routes/movie.js";
 import { seatsRouter } from "./routes/seats.js";
 import { holdsRouter } from "./routes/holds.js";
 import { myTicketsRouter } from "./routes/myTickets.js";
+import { checkoutVerifyRouter } from "./routes/checkoutVerify.js";
+import { ClaudeVerifier } from "./services/paymentVerifier.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { passport } from "./auth/passport.js";
 import { authRouter } from "./auth/routes.js";
@@ -48,6 +50,7 @@ app.use("/api/movie", movieRouter);
 app.use("/api/seats", seatsRouter);
 app.use("/api/holds", holdsRouter);
 app.use("/api/my-tickets", myTicketsRouter);
+app.use("/api/checkout", checkoutVerifyRouter({ verifier: new ClaudeVerifier() }));
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found." });
