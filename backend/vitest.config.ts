@@ -9,6 +9,7 @@ export default defineConfig({
     setupFiles: ["src/test/setup.ts"],
     pool: "forks",
     forks: { singleFork: true },
+    fileParallelism: false,
     hookTimeout: 30_000,
   },
 });
