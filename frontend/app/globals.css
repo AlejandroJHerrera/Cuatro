@@ -242,3 +242,9 @@
     scroll-behavior: auto !important;
   }
 }
+
+@keyframes scan-fadeout {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-scan-fadeout { animation: scan-fadeout 1.5s forwards; }

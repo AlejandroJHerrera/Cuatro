@@ -18,6 +18,7 @@ export type SessionUser = {
   name: string | null;
   avatarUrl: string | null;
   provider: "google" | "email";
+  role: "customer" | "doorStaff" | "admin";
 };
 
 const BACKEND_URL =
@@ -73,6 +74,21 @@ export async function requireUser(nextPath: string): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) {
     redirect(`/signin?next=${encodeURIComponent(nextPath)}`);
+  }
+  return user;
+}
+
+/** Guard a server component to a specific role. Redirects signed-out users to /signin?next=…; signed-in but wrong-role users to /. */
+export async function requireRole(
+  allowed: Array<"doorStaff" | "admin">,
+  nextPath: string,
+): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect(`/signin?next=${encodeURIComponent(nextPath)}`);
+  }
+  if (!allowed.includes(user.role as "doorStaff" | "admin")) {
+    redirect("/");
   }
   return user;
 }

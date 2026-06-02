@@ -34,6 +34,7 @@ function publicUser(u: User) {
     name: u.name,
     avatarUrl: u.avatarUrl,
     provider: u.provider,
+    role: u.role,
   };
 }
 
