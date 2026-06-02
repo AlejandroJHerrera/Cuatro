@@ -9,6 +9,8 @@ export type OrderStatus = "upcoming" | "past";
 
 export type Order = {
   id: string;
+  /** 6-char human-readable code. Use this for ?order= URLs and resend-email endpoints. */
+  code: string;
   /** Movie title at time of purchase. */
   title: string;
   /** ISO showtime carrying the venue offset (see lib/format.ts). */
@@ -17,6 +19,8 @@ export type Order = {
   venueAddress: string;
   /** Seat labels in display order, e.g. ["C7", "C8", "C9"]. */
   seatIds: string[];
+  /** Per-seat ticket data — same length as seatIds, includes signed QR payload. */
+  tickets: { seat: string; qrPayload: string }[];
   /** "upcoming" before showtime, "past" after. Derived server-side. */
   status: OrderStatus;
   /** Total in whole Lempiras (matches schema's Order.totalLps). */

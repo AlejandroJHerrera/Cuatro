@@ -1,5 +1,6 @@
 import { copy } from "@/lib/copy";
 import { parseSeatId, seatLabel } from "@/lib/seats";
+import { QrBlock } from "./QrBlock";
 
 type Props = {
   seatId: string;
@@ -9,6 +10,7 @@ type Props = {
   venueLine: string;
   /** Alternates the slight rotation direction on tablet+. */
   index: number;
+  qrPayload?: string;
 };
 
 /**
@@ -26,6 +28,7 @@ export function TicketStub({
   dateLine,
   venueLine,
   index,
+  qrPayload,
 }: Props) {
   const parsed = parseSeatId(seatId);
   const label = parsed ? seatLabel(parsed.row, parsed.num) : seatId;
@@ -71,6 +74,12 @@ export function TicketStub({
       >
         {label}
       </div>
+
+      {qrPayload && (
+        <div className="mt-3 flex justify-center">
+          <QrBlock payload={qrPayload} size={144} />
+        </div>
+      )}
 
       {/* Operational stamps */}
       <dl

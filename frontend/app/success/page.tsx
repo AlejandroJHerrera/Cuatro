@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { copy } from "@/lib/copy";
 import { getMovie } from "@/lib/movie";
-import { parseSeatId } from "@/lib/seats";
+import { getMyOrders } from "@/lib/orders";
 import {
   formatDateLine,
   formatVenueAddress,
@@ -28,16 +28,18 @@ export default async function SuccessPage({
 }) {
   const user = await requireUser("/success");
   const params = await searchParams;
-  const seatIds = parseSeats(params.seats);
-  const orderId = parseOrderId(params.order);
+  const orderCode = params.order?.trim();
   const movieRes = await getMovie();
 
   if (!movieRes.ok) return <ErrorFallback />;
   const { movie } = movieRes;
 
-  if (seatIds.length === 0 || !orderId) {
-    return <EmptySuccess />;
-  }
+  if (!orderCode) return <EmptySuccess />;
+
+  const ordersRes = await getMyOrders();
+  if (!ordersRes.ok) return <ErrorFallback />;
+  const order = ordersRes.orders.find((o) => o.code === orderCode);
+  if (!order || order.tickets.length === 0) return <EmptySuccess />;
 
   const dateLine = formatDateLine(movie.showtimeISO);
   const venueLine = formatVenueAddress(movie);
@@ -91,15 +93,16 @@ export default async function SuccessPage({
           aria-label="Boletos emitidos"
           className="flex flex-col gap-8 sm:gap-10"
         >
-          {seatIds.map((id, i) => (
+          {order.tickets.map((t, i) => (
             <TicketStub
-              key={id}
-              seatId={id}
-              orderId={orderId}
+              key={t.seat}
+              seatId={t.seat}
+              orderId={order.code}
               guestName={guestName}
               dateLine={dateLine}
               venueLine={venueLine}
               index={i}
+              qrPayload={t.qrPayload}
             />
           ))}
         </section>
@@ -112,7 +115,7 @@ export default async function SuccessPage({
             pt-2
           "
         >
-          <ResendEmailButton />
+          <ResendEmailButton orderCode={order.code} />
           <Link
             href="/my-tickets"
             className="
@@ -178,25 +181,3 @@ function EmptySuccess() {
   );
 }
 
-/** Parse and validate the `seats` query param. Drops malformed/duplicate IDs. */
-function parseSeats(raw: string | undefined): string[] {
-  if (!raw) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const part of raw.split(",")) {
-    const id = part.trim().toUpperCase();
-    if (!id || seen.has(id)) continue;
-    if (!parseSeatId(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
-}
-
-/** Sanitize the `order` query param to a short alphanumeric token. */
-function parseOrderId(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (cleaned.length < 4 || cleaned.length > 16) return null;
-  return cleaned;
-}

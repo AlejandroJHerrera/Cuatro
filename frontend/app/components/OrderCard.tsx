@@ -24,7 +24,7 @@ export function OrderCard({ order }: { order: Order }) {
     .join("   ");
   const reopenHref =
     `/success?seats=${encodeURIComponent(order.seatIds.join(","))}` +
-    `&order=${encodeURIComponent(order.id)}`;
+    `&order=${encodeURIComponent(order.code)}`;
 
   return (
     <article
@@ -92,7 +92,7 @@ export function OrderCard({ order }: { order: Order }) {
         <dd className="m-0 text-bulb">{seatLabels}</dd>
 
         <dt className="text-bulb/55">{copy.myTickets.cardOrderLabel}</dt>
-        <dd className="m-0 text-bulb">{order.id}</dd>
+        <dd className="m-0 text-bulb">{order.code}</dd>
 
         <dt className="text-bulb/55">{copy.myTickets.cardTotalLabel}</dt>
         <dd className="m-0 text-bulb">{total}</dd>
@@ -101,7 +101,7 @@ export function OrderCard({ order }: { order: Order }) {
       {/* Per-card toolbar */}
       <div className="flex flex-wrap items-center gap-x-7 gap-y-3 pt-1">
         {!isPast && (
-          <ResendEmailButton orderId={order.id} variant="inline" />
+          <ResendEmailButton orderCode={order.code} variant="inline" />
         )}
         <Link
           href={reopenHref}
