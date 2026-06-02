@@ -16,7 +16,7 @@ type Props = {
  *   - active hold  → "your reservation still stands" + retry + modify
  *   - expired hold → "your reservation lapsed" + single CTA back to /seats
  *
- * No redirect on expiry — the user landed here from Stripe explicitly, so
+ * No redirect on expiry — the user landed here on purpose, so
  * bouncing them away would be aggressive. The state just relaxes into the
  * expired variant.
  */
