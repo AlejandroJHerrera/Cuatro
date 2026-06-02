@@ -1,0 +1,244 @@
+@import "tailwindcss";
+
+/**
+ * Tailwind v4 design tokens.
+ * Every entry below becomes a Tailwind utility:
+ *   --color-hall  → bg-hall / text-hall / border-hall
+ *   --font-display → font-display
+ *   --tracking-marquee → tracking-marquee
+ *   --animate-rise → animate-rise
+ *   --ease-out-quart → ease-out-quart
+ */
+@theme {
+  /* Colors — OKLCH, tinted, no #000 or #fff anywhere in the system. */
+  --color-hall: oklch(0.135 0.012 270);
+  --color-curtain: oklch(0.185 0.012 270);
+  --color-ash: oklch(0.66 0.008 270);
+  --color-bulb: oklch(0.965 0.008 80);
+  --color-held: oklch(0.42 0.005 270);
+  --color-taken: oklch(0.17 0.005 270);
+  --color-gold: oklch(0.78 0.13 75);
+  --color-gold-deep: oklch(0.68 0.14 65);
+  --color-gold-glow: oklch(0.78 0.13 75 / 0.32);
+
+  /* Font stacks — next/font writes the source family into --font-*-src. */
+  --font-display: var(--font-display-src), Georgia, serif;
+  --font-body: var(--font-body-src), system-ui, sans-serif;
+  --font-mono: var(--font-mono-src), ui-monospace, "SFMono-Regular", monospace;
+
+  /* Tracking. */
+  --tracking-marquee: 0.06em;
+  --tracking-label: 0.18em;
+
+  /* Motion. */
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Keyframe animations exposed as utilities. */
+  --animate-rise: rise 400ms cubic-bezier(0.165, 0.84, 0.44, 1) both;
+  --animate-poster-fade: poster-fade-in 700ms cubic-bezier(0.165, 0.84, 0.44, 1)
+    60ms both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes poster-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes poster-scale {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.04);
+  }
+}
+
+/* Base resets that aren't ergonomic as utilities. */
+@layer base {
+  html {
+    background: var(--color-hall);
+    color: var(--color-bulb);
+    color-scheme: dark;
+    font-family: var(--font-body);
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-hall);
+    color: var(--color-bulb);
+    min-height: 100svh;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-gold);
+    color: var(--color-hall);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 1px;
+  }
+}
+
+/**
+ * Hero overlay gradient — four stops, heaviest at the bottom so the CTA reads.
+ * Tailwind's gradient utilities only support three stops; this is a named
+ * utility that holds the whole stack in one place.
+ */
+@utility hero-overlay {
+  background: linear-gradient(
+    to bottom,
+    oklch(0.135 0.012 270 / 0.65) 0%,
+    oklch(0.135 0.012 270 / 0.78) 38%,
+    oklch(0.135 0.012 270 / 0.94) 72%,
+    oklch(0.11 0.012 270 / 0.985) 100%
+  );
+}
+
+/**
+ * Hero blend for the right-anchored cover art. Two stacked gradients:
+ *   1. horizontal — opaque Hall Black on the left (where the title sits),
+ *      fading to transparent past ~60% so the CD and Earth horizon read clean.
+ *   2. vertical — a soft pull-down to keep the bottom edge welded to the page,
+ *      and the top edge subdued so the header reads.
+ *
+ * The image bleeds OFF the right edge by design; no need to soft-mask there.
+ */
+@utility hero-blend-right {
+  background:
+    linear-gradient(
+      to right,
+      oklch(0.135 0.012 270 / 0.98) 0%,
+      oklch(0.135 0.012 270 / 0.92) 28%,
+      oklch(0.135 0.012 270 / 0.55) 52%,
+      oklch(0.135 0.012 270 / 0.18) 72%,
+      oklch(0.135 0.012 270 / 0.05) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.135 0.012 270 / 0.55) 0%,
+      oklch(0.135 0.012 270 / 0.18) 30%,
+      oklch(0.135 0.012 270 / 0.35) 78%,
+      oklch(0.11 0.012 270 / 0.92) 100%
+    );
+}
+
+/**
+ * Mobile-only blend: the cover sits behind the whole stack, so we need a
+ * heavier bottom tint to keep the lower-third title and CTA legible.
+ */
+@utility hero-blend-bottom {
+  background: linear-gradient(
+    to bottom,
+    oklch(0.135 0.012 270 / 0.55) 0%,
+    oklch(0.135 0.012 270 / 0.62) 35%,
+    oklch(0.135 0.012 270 / 0.88) 72%,
+    oklch(0.11 0.012 270 / 0.985) 100%
+  );
+}
+
+/**
+ * Drop-cap on the programmer's note. Pure utility wins are awkward for
+ * ::first-letter because of float + size + family + line-height combined.
+ */
+@utility drop-cap {
+  &::first-letter {
+    font-family: var(--font-display);
+    font-size: 3.2em;
+    line-height: 0.85;
+    float: left;
+    padding-right: 0.12em;
+    padding-top: 0.05em;
+    color: var(--color-bulb);
+    font-weight: 400;
+  }
+}
+
+/**
+ * Diagonal hatch patterns for unavailable seats.
+ * Pattern-plus-color: held and taken read distinctly even in grayscale.
+ */
+@utility seat-hatch-held {
+  background-image: repeating-linear-gradient(
+    45deg,
+    oklch(0.42 0.005 270) 0,
+    oklch(0.42 0.005 270) 1.5px,
+    transparent 1.5px,
+    transparent 5px
+  );
+}
+
+@utility seat-hatch-taken {
+  background-image: repeating-linear-gradient(
+    45deg,
+    oklch(0.22 0.005 270) 0,
+    oklch(0.22 0.005 270) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+}
+
+/**
+ * Scroll-driven 2% hero scale. Pure decoration; @supports-gated; killed by
+ * prefers-reduced-motion. Applied to the poster layer.
+ */
+@utility poster-scroll-scale {
+  @supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: poster-scale linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 30vh;
+    }
+  }
+}
+
+/* Skip link — fixed in the global layer so it works without component CSS. */
+.skip-link {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-curtain);
+  color: var(--color-bulb);
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transform: translateY(-200%);
+  transition: transform 200ms var(--ease-out-quart);
+  z-index: 100;
+  border: 1px solid var(--color-gold);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* Reduced motion: collapse everything decorative. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

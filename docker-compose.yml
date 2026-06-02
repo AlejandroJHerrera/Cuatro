@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cuatro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cuatro
+      POSTGRES_PASSWORD: cuatro
+      POSTGRES_DB: cuatro
+    ports:
+      - "5433:5432"
+    volumes:
+      - cuatro-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cuatro -d cuatro"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cuatro-pgdata:

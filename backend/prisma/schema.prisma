@@ -1,0 +1,121 @@
+// Cuatro — ticketing for a single screening of the "CUATRO" documentary.
+// See PLAN.md and HANDOFF.md for context. Updates vs. PLAN.md:
+//   - Auth: Google OAuth + email/password (GitHub dropped).
+//   - Price + totals in LPS (Lempiras), not USD cents.
+//   - No QR codes — door verification by name list.
+//   - Seats follow the real 121-seat SALA 4 layout (9 rows, irregular).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  google
+  email
+}
+
+enum SeatKind {
+  standard
+  accessible
+}
+
+enum OrderStatus {
+  pending
+  paid
+  failed
+  expired
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  avatarUrl    String?
+  provider     AuthProvider
+  providerId   String? // null for email/password accounts
+  passwordHash String? // null for OAuth accounts
+  createdAt    DateTime     @default(now())
+
+  orders Order[]
+  holds  SeatHold[]
+
+  @@unique([provider, providerId])
+}
+
+model Movie {
+  id           String   @id @default(cuid())
+  title        String
+  director     String
+  synopsis     String
+  startsAt     DateTime
+  runtimeMin   Int
+  language     String // ISO-ish short code: "ES", "EN"
+  year         Int
+  venueName    String
+  venueAddress String
+  priceLps     Int
+
+  seats Seat[]
+}
+
+model Seat {
+  id      String   @id @default(cuid())
+  movieId String
+  movie   Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  row     String // "A" .. "I"
+  num     Int // 1-indexed position within the row
+  col     Int // master-grid column (1..18) for visual placement
+  label   String // "A1", "C7", ... (also matches frontend seatKey)
+  kind    SeatKind @default(standard)
+
+  ticket Ticket?
+  hold   SeatHold?
+
+  @@unique([movieId, row, num])
+}
+
+model SeatHold {
+  id        String   @id @default(cuid())
+  seatId    String   @unique
+  seat      Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  // Human-readable 6-char code printed on tickets + the door list. Assigned
+  // at creation time via nanoid(6, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789").
+  code            String      @unique
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  stripeSessionId String?     @unique
+  status          OrderStatus @default(pending)
+  totalLps        Int
+  guestName       String // printed on stubs + appears on the door list
+  createdAt       DateTime    @default(now())
+
+  tickets Ticket[]
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seatId    String   @unique
+  seat      Seat     @relation(fields: [seatId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
