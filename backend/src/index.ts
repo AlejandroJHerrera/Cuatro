@@ -9,6 +9,7 @@ import { holdsRouter } from "./routes/holds.js";
 import { myTicketsRouter } from "./routes/myTickets.js";
 import { checkoutVerifyRouter } from "./routes/checkoutVerify.js";
 import { ordersRouter } from "./routes/orders.js";
+import { adminRouter } from "./routes/admin.js";
 import { ClaudeVerifier } from "./services/paymentVerifier.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { passport } from "./auth/passport.js";
@@ -53,6 +54,7 @@ app.use("/api/holds", holdsRouter);
 app.use("/api/my-tickets", myTicketsRouter);
 app.use("/api/checkout", checkoutVerifyRouter({ verifier: new ClaudeVerifier() }));
 app.use("/api/orders", ordersRouter);
+app.use("/api/admin", adminRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found." });
