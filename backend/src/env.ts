@@ -8,16 +8,17 @@ const schema = z.object({
   FRONTEND_URL: z.string().url().default("http://localhost:3000"),
   BACKEND_URL: z.string().url().default("http://localhost:4000"),
 
-  // Sessions: required (used to sign the session cookie). Dev default is
-  // fine; prod must override with a real secret.
   SESSION_SECRET: z.string().min(16).default("dev-secret-change-me-please-32chars"),
 
-  // Optional until later phases — declared here so they're documented.
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  RESEND_API_KEY: z.string().optional(),
+
+  // Payment pivot
+  QR_SIGNING_SECRET: z.string().regex(/^[0-9a-f]{64}$/, "must be 32-byte hex"),
+  BANK_ACCOUNT_REF: z.string().min(1),
+  PAYMENT_ARCHIVE_EMAIL: z.string().email(),
+  ANTHROPIC_API_KEY: z.string().min(1),
+  RESEND_API_KEY: z.string().min(1),
 });
 
 const parsed = schema.safeParse(process.env);

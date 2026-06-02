@@ -36,7 +36,7 @@ export async function makeSeats(movieId: string, labels: string[]) {
       prisma.seat.create({
         data: {
           movieId,
-          row: label[0],
+          row: label[0] ?? "",
           num: Number(label.slice(1)),
           col: i + 1,
           label,
