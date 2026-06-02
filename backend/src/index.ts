@@ -14,6 +14,7 @@ import { ClaudeVerifier } from "./services/paymentVerifier.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { passport } from "./auth/passport.js";
 import { authRouter } from "./auth/routes.js";
+import { FakeVerifier } from "./services/paymentVerifier.js";
 
 const app = express();
 
@@ -52,7 +53,18 @@ app.use("/api/movie", movieRouter);
 app.use("/api/seats", seatsRouter);
 app.use("/api/holds", holdsRouter);
 app.use("/api/my-tickets", myTicketsRouter);
-app.use("/api/checkout", checkoutVerifyRouter({ verifier: new ClaudeVerifier() }));
+//app.use("/api/checkout", checkoutVerifyRouter({ verifier: new ClaudeVerifier() }));
+// For testing purposes, use a fake verifier that always returns a successful verdict. Replace with the real ClaudeVerifier in production.
+app.use(
+  "/api/checkout",
+  checkoutVerifyRouter({
+    verifier: new FakeVerifier({
+      ok: true,
+      txnId: "TXN-DEV-1",
+      senderName: "Prueba",
+    }),
+  }),
+);
 app.use("/api/orders", ordersRouter);
 app.use("/api/admin", adminRouter);
 
@@ -67,7 +79,9 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 app.use(errorHandler);
 
 const server = app.listen(env.PORT, () => {
-  console.log(`Cuatro backend on http://localhost:${env.PORT} (env=${env.NODE_ENV})`);
+  console.log(
+    `Cuatro backend on http://localhost:${env.PORT} (env=${env.NODE_ENV})`,
+  );
 });
 
 const shutdown = async (signal: string) => {

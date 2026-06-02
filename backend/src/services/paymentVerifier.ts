@@ -58,7 +58,14 @@ const VERDICT_TOOL = {
           ok: { const: false },
           reason: {
             type: "string",
-            enum: ["amount-mismatch", "wrong-account", "stale-receipt", "missing-txn-id", "not-a-receipt", "unreadable"],
+            enum: [
+              "amount-mismatch",
+              "wrong-account",
+              "stale-receipt",
+              "missing-txn-id",
+              "not-a-receipt",
+              "unreadable",
+            ],
           },
           detail: { type: "string", maxLength: 120 },
         },
@@ -70,13 +77,13 @@ const VERDICT_TOOL = {
 } as const;
 
 const SYSTEM_PROMPT = `Eres un verificador de comprobantes de pago para una función única del cine CUATRO en Honduras.
-El cliente paga por transferencia bancaria o Tigo Money. Recibes el comprobante (captura de pantalla) y los datos esperados.
+El cliente paga por transferencia bancaria. Recibes el comprobante (captura de pantalla) y los datos esperados.
 Debes aprobar SOLO si TODAS las verificaciones pasan:
 1. El monto en el comprobante es exactamente igual al monto esperado (en LPS / HNL).
 2. La cuenta destino del comprobante coincide con la cuenta esperada.
 3. La fecha del comprobante está dentro de las últimas 24 horas.
 4. El comprobante muestra un número de transacción/referencia no vacío.
-5. La imagen es claramente un comprobante bancario o de Tigo Money (no un meme, foto al azar, ni nota manuscrita).
+5. La imagen es claramente un comprobante bancario (no un meme, foto al azar, ni nota manuscrita).
 
 Si una verificación falla, devuelve el rechazo MÁS específico posible y un "detail" en español de máximo 120 caracteres dirigido al cliente (ej. "El monto no coincide — esperábamos L 48.00").
 
@@ -109,7 +116,11 @@ export class ClaudeVerifier implements PaymentVerifier {
           content: [
             {
               type: "image",
-              source: { type: "base64", media_type: input.mimeType, data: input.imageBuffer.toString("base64") },
+              source: {
+                type: "base64",
+                media_type: input.mimeType,
+                data: input.imageBuffer.toString("base64"),
+              },
             },
             { type: "text", text: userText },
           ],
@@ -118,7 +129,11 @@ export class ClaudeVerifier implements PaymentVerifier {
     });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
-    if (!toolUse || toolUse.type !== "tool_use" || toolUse.name !== "emit_verdict") {
+    if (
+      !toolUse ||
+      toolUse.type !== "tool_use" ||
+      toolUse.name !== "emit_verdict"
+    ) {
       throw new Error("verifier-returned-no-tool-use");
     }
     return toolUse.input as VerifyVerdict;

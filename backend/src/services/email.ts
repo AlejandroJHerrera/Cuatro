@@ -6,7 +6,7 @@ import { PaymentArchiveEmail, type ArchiveProps } from "../emails/PaymentArchive
 import { OrderRejectionEmail, type RejectionProps } from "../emails/OrderRejectionEmail.js";
 
 const resend = new Resend(env.RESEND_API_KEY);
-const FROM = "Cuatro <no-reply@cuatro.example>";
+const FROM = "Cuatro <onboarding@resend.dev>";
 
 export async function sendOrderConfirmation(args: {
   to: string;
