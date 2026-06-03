@@ -11,7 +11,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 
 export const HOLD_DURATION_MS = 10 * 60 * 1000;
-export const MAX_SEATS_PER_HOLD = 8;
+export const MAX_SEATS_PER_HOLD = 121;
 
 export type HoldResult =
   | { ok: true; seatIds: string[]; expiresAt: number }

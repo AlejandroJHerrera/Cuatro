@@ -1,4 +1,5 @@
 import { copy } from "@/lib/copy";
+import { PhotoCarousel } from "./PhotoCarousel";
 
 export function ProgrammerNote() {
   return (
@@ -25,14 +26,25 @@ export function ProgrammerNote() {
         <p
           className="
             drop-cap m-0
-            font-body text-base sm:text-lg
-            leading-[1.65]
+            font-body text-lg sm:text-xl
+            leading-[1.6]
             text-bulb/95
             [letter-spacing:0.005em]
           "
         >
           {copy.note.body}
         </p>
+        <p
+          className="
+            m-0 font-display italic
+            text-bulb text-lg sm:text-xl
+            leading-snug
+          "
+          style={{ letterSpacing: "0.04em" }}
+        >
+          {copy.note.benefit}
+        </p>
+        <PhotoCarousel />
       </div>
     </section>
   );

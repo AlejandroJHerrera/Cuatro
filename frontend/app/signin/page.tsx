@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { copy } from "@/lib/copy";
 import { getSessionUser } from "@/lib/auth";
-import { OAuthButton } from "@/app/components/OAuthButton";
 import { EmailAuthForm } from "@/app/components/EmailAuthForm";
 
 export const metadata: Metadata = {
@@ -91,10 +90,6 @@ export default async function SignInPage({
             {copy.signin.body}
           </p>
 
-          <OAuthButton next={safeNext} />
-
-          <Divider label={copy.signin.dividerLabel} />
-
           <EmailAuthForm next={safeNext} />
 
           <p
@@ -122,23 +117,6 @@ export default async function SignInPage({
         </Link>
       </div>
     </main>
-  );
-}
-
-function Divider({ label }: { label: string }) {
-  return (
-    <div
-      className="
-        flex items-center gap-4
-        font-mono text-[0.625rem] uppercase text-bulb/45
-      "
-      style={{ letterSpacing: "var(--tracking-label)" }}
-      aria-hidden="true"
-    >
-      <span className="h-px flex-1 bg-ash/30" />
-      <span>{label}</span>
-      <span className="h-px flex-1 bg-ash/30" />
-    </div>
   );
 }
 

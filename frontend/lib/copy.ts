@@ -21,11 +21,13 @@ export const copy = {
   },
   hero: {
     cta: "COMPRAR ENTRADAS",
+    subtitle: "LA BANDA SONORA DE LA VIDA",
     scrollHint: "DESPLAZAR",
   },
   note: {
     sectionLabel: "NOTA DEL PROGRAMADOR",
     body: "Una sola función. Una sola sala. Cuatro es el documental que acompaña al disco homónimo de Jose Javier Diaz: cuatro piezas, cuatro estaciones, cuatro direcciones. Una hora exacta dentro del estudio, del estanque y de la montaña, filmada entre dos solsticios. Esta es la única proyección programada antes de que la película descanse.",
+    benefit: "A beneficio de la Casa de Jose",
   },
   tracklist: {
     sectionLabel: "TRACKLIST",

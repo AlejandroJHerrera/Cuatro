@@ -21,7 +21,7 @@ type Props = {
  */
 export function EmailAuthForm({ next }: Props) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>("signup");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameId = useId();

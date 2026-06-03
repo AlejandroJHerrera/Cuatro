@@ -35,13 +35,13 @@ const MOVIE = {
   director: "JOSE JAVIER DIAZ",
   synopsis:
     "Un documental sobre el álbum CUATRO de Jose Javier Diaz — cuatro canciones, cuatro estaciones, cuatro horizontes.",
-  startsAt: new Date("2026-06-27T18:00:00-06:00"), // Honduras is UTC-6, no DST
+  startsAt: new Date("2026-06-24T19:00:00-06:00"), // Honduras is UTC-6, no DST
   runtimeMin: 30,
   language: "ES",
   year: 2026,
   venueName: "CINEPOLIS ALTARA",
   venueAddress: "SAN PEDRO SULA",
-  priceLps: 12,
+  priceLps: 1000,
 };
 
 async function main() {

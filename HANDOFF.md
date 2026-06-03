@@ -394,7 +394,7 @@ No further coding is required to make the v1 flow functional. What follows is th
 ### Tier 1 — Blockers before any real customer can buy a ticket
 
 1. **Rotate leaked credentials** — the Resend API key and the ngrok authtoken were both pasted in a chat transcript and should be considered compromised. Revoke + regenerate in their respective dashboards.
-2. **Verify a real sending domain on Resend.** Buy a domain (e.g. `cuatrofilms.com` or similar) if you don't have one, add Resend's SPF + DKIM + DMARC records at your registrar, wait for "Verified" in the Resend dashboard. Then swap `FROM` in [`email.ts`](backend/src/services/email.ts:9) off `onboarding@resend.dev` to `no-reply@yourdomain.com`. Without this, customer confirmations only deliver to the Resend account owner.
+2. **Verify a real sending domain on Resend.** Domain: `discocuatro.com` (registered on Cloudflare). Add Resend's SPF + DKIM records and a DMARC TXT at Cloudflare DNS, wait for "Verified" in the Resend dashboard. Then swap `FROM` in [`email.ts`](backend/src/services/email.ts:9) off `onboarding@resend.dev` to `no-reply@discocuatro.com`. Without this, customer confirmations only deliver to the Resend account owner.
 3. **Real bank account details.** Update `BANK_ACCOUNT_REF` in `backend/.env` **and** `NEXT_PUBLIC_BANK_ACCOUNT_REF` in `frontend/.env.local` to production values. They must match exactly — Claude cross-checks the screenshot against the backend value while the frontend renders the customer-facing copy.
 4. **Switch off FakeVerifier.** [`backend/src/index.ts`](backend/src/index.ts) currently uses `new FakeVerifier({ ok: true, txnId: "TXN-DEV-1", senderName: "Prueba" })` (every screenshot auto-approves). Restore `new ClaudeVerifier()` and set a real `ANTHROPIC_API_KEY`.
 5. **Promote at least one admin account.** Sign up via the UI → Prisma Studio → set `User.role = admin` (and `doorStaff` for additional staff).
@@ -405,8 +405,8 @@ No further coding is required to make the v1 flow functional. What follows is th
 7. **Pick a backend host.** Railway, Render, or Fly.io are the obvious candidates — managed Postgres + Node in one place with automatic HTTPS. Provision a managed Postgres, set `DATABASE_URL`, run `npx prisma migrate deploy` on first boot, then `npm run db:seed` once to insert the movie + 121 seats.
 8. **Pick a frontend host.** Vercel is the natural Next.js choice — GitHub-connected, automatic HTTPS, edge caching. Free tier handles a single-show scale comfortably.
 9. **Set production env vars** on both hosts:
-   - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://yourdomain.com`, `BACKEND_URL=https://api.yourdomain.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
-   - Frontend: `API_URL=https://api.yourdomain.com` (server-side fetches). Leave `NEXT_PUBLIC_BACKEND_URL=` blank to keep the same-origin pattern via the rewrite, OR set it to the backend URL if you've decided to call directly.
+   - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://discocuatro.com`, `BACKEND_URL=https://api.discocuatro.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
+   - Frontend: `API_URL=https://api.discocuatro.com` (server-side fetches). Leave `NEXT_PUBLIC_BACKEND_URL=` blank to keep the same-origin pattern via the rewrite, OR set it to the backend URL if you've decided to call directly.
 10. **Decide: keep the Next rewrite proxy in production, or call the backend directly?**
     - **Keep rewrite** = single origin, no CORS in prod, slightly more latency. Recommended for v1.
     - **Direct calls** = need to tighten the dev-only LAN regex in [`backend/src/index.ts`](backend/src/index.ts) and configure prod CORS to the exact frontend origin. More surface to misconfigure.
@@ -419,7 +419,7 @@ No further coding is required to make the v1 flow functional. What follows is th
 14. **Surface Resend errors.** Today [`checkoutVerify.ts`](backend/src/routes/checkoutVerify.ts) doesn't check the result of `mailer.confirmation(...)`. Wrap each send in try/catch and log `result.error`. The `<ResendEmailButton>` is already a customer-facing escape hatch — make sure it works in prod.
 15. **Rate limit `/api/checkout/verify`.** Expensive call (Claude API) behind auth — a hostile authenticated user could still drain Anthropic credit. `express-rate-limit`: 10 attempts per user per 10 min.
 16. **DB backups.** Whatever host you pick, enable nightly automated backups. Railway/Render/Fly all offer this in one click.
-17. **DMARC + reply-to.** Add a DMARC TXT record once the Resend domain is verified (`p=none` initially, then `p=quarantine` after monitoring). Set `reply_to` in the Resend send calls to a real human inbox (`hola@yourdomain.com` → Cloudflare Email Routing → forward to your gmail).
+17. **DMARC + reply-to.** Add a DMARC TXT record once the Resend domain is verified (`p=none` initially, then `p=quarantine` after monitoring). Set `reply_to` in the Resend send calls to a real human inbox (`hola@discocuatro.com` → Cloudflare Email Routing → forward to your gmail).
 18. **Header user menu.** Sign-in indicator + logout button. `POST /api/auth/logout` is wired; just no UI surface yet. Customers will ask.
 19. **Health-check ping.** UptimeRobot (free) hitting `GET /health` every 5 min. Page you if the backend dies.
 

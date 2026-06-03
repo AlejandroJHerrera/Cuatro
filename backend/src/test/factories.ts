@@ -25,7 +25,7 @@ export async function makeMovie() {
       year: 2026,
       venueName: "Test Venue",
       venueAddress: "Test",
-      priceLps: 12,
+      priceLps: 1000,
     },
   });
 }

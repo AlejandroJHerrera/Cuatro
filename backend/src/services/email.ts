@@ -1,12 +1,21 @@
 import { Resend } from "resend";
 import { render } from "@react-email/components";
 import { env } from "../env.js";
-import { OrderConfirmationEmail, type ConfirmationProps } from "../emails/OrderConfirmationEmail.js";
-import { PaymentArchiveEmail, type ArchiveProps } from "../emails/PaymentArchiveEmail.js";
-import { OrderRejectionEmail, type RejectionProps } from "../emails/OrderRejectionEmail.js";
+import {
+  OrderConfirmationEmail,
+  type ConfirmationProps,
+} from "../emails/OrderConfirmationEmail.js";
+import {
+  PaymentArchiveEmail,
+  type ArchiveProps,
+} from "../emails/PaymentArchiveEmail.js";
+import {
+  OrderRejectionEmail,
+  type RejectionProps,
+} from "../emails/OrderRejectionEmail.js";
 
 const resend = new Resend(env.RESEND_API_KEY);
-const FROM = "Cuatro <onboarding@resend.dev>";
+const FROM = "Cuatro <no-reply@discocuatro.com>";
 
 export async function sendOrderConfirmation(args: {
   to: string;
@@ -37,12 +46,20 @@ export async function sendPaymentArchive(args: {
     subject: `[CUATRO] ${args.props.orderCode} · L${args.props.amountLps.toFixed(2)} · ${args.props.guestName}`,
     html,
     attachments: args.screenshot
-      ? [{ filename: args.screenshot.filename, content: args.screenshot.content.toString("base64") }]
+      ? [
+          {
+            filename: args.screenshot.filename,
+            content: args.screenshot.content.toString("base64"),
+          },
+        ]
       : undefined,
   } as any);
 }
 
-export async function sendOrderRejection(args: { to: string; props: RejectionProps }) {
+export async function sendOrderRejection(args: {
+  to: string;
+  props: RejectionProps;
+}) {
   const html = await render(OrderRejectionEmail(args.props));
   return resend.emails.send({
     from: FROM,

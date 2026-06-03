@@ -70,7 +70,18 @@ export function Hero({ movie }: { movie: Movie }) {
           </h1>
           <p
             className="
-              m-0 font-display uppercase text-bulb
+              m-0 font-display italic font-light
+              text-bulb/85
+              text-[clamp(1rem,2vw,1.5rem)]
+              leading-snug
+            "
+            style={{ letterSpacing: "0.08em" }}
+          >
+            {copy.hero.subtitle}
+          </p>
+          <p
+            className="
+              mt-2 m-0 font-display uppercase text-bulb
               text-[clamp(1.25rem,2.4vw,1.875rem)]
               leading-tight
             "
@@ -89,6 +100,7 @@ export function Hero({ movie }: { movie: Movie }) {
         <div
           className="
             mt-12 flex flex-col items-start gap-4
+            sm:items-center
             opacity-0 translate-y-3 animate-rise
           "
           style={{ animationDelay: "420ms" }}
@@ -142,8 +154,8 @@ function CtaSlot({
       aria-label={`${copy.hero.cta} para ${title.toUpperCase()}, ${dateLine}`}
       className="
         group relative inline-flex items-center justify-center gap-2
-        min-h-14 min-w-[18ch]
-        px-10 py-[1.1em]
+        min-h-14 min-w-[18ch] sm:min-w-[28ch]
+        px-10 sm:px-16 py-[1.1em]
         font-body font-medium text-base uppercase
         bg-gold text-hall border border-gold
         transition-[background,color,transform,box-shadow]
