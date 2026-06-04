@@ -442,18 +442,20 @@ No further coding is required to make the v1 flow functional. What follows is th
 10. **Decide: keep the Next rewrite proxy in production, or call the backend directly?**
     - **Keep rewrite** = single origin, no CORS in prod, slightly more latency. Recommended for v1.
     - **Direct calls** = need to tighten the dev-only LAN regex in [`backend/src/index.ts`](backend/src/index.ts) and configure prod CORS to the exact frontend origin. More surface to misconfigure.
-11. **Sessions + cookies in production.** [`auth/session.ts`](backend/src/auth/session.ts) needs `cookie.secure = true` and `cookie.sameSite = "lax"` (same-origin) or `"none"` (cross-origin). Test sign-in works in prod before announcing.
+11. ✅ **Sessions + cookies in production.** *(Done 2026-06-04, code.)* [`auth/session.ts`](backend/src/auth/session.ts) already sets `secure: NODE_ENV==='production'`, `sameSite: 'lax'`, `httpOnly: true`, 30-day `maxAge` — correct for the single-origin (Next rewrite) setup. Switch `sameSite` to `'none'` only if you split frontend/backend onto different registrable domains.
 
 ### Tier 3 — Hardening + observability
 
-12. **Tighten CORS in prod.** Dev LAN regex is gated behind `NODE_ENV === "development"`, but double-check `FRONTEND_URL` env exactly matches the prod origin.
-13. **Error monitoring.** Wire Sentry into backend (`@sentry/node`) and frontend (`@sentry/nextjs`). ~15 min each, free tier handles small scale. Without this, silent failures (Resend rejections, Claude API errors, DB drops) won't surface until a customer complains.
-14. **Surface Resend errors.** Today [`checkoutVerify.ts`](backend/src/routes/checkoutVerify.ts) doesn't check the result of `mailer.confirmation(...)`. Wrap each send in try/catch and log `result.error`. The `<ResendEmailButton>` is already a customer-facing escape hatch — make sure it works in prod.
-15. **Rate limit `/api/checkout/verify`.** Expensive call (Claude API) behind auth — a hostile authenticated user could still drain Anthropic credit. `express-rate-limit`: 10 attempts per user per 10 min.
-16. **DB backups.** Whatever host you pick, enable nightly automated backups. Railway/Render/Fly all offer this in one click.
-17. **DMARC + reply-to.** Add a DMARC TXT record once the Resend domain is verified (`p=none` initially, then `p=quarantine` after monitoring). Set `reply_to` in the Resend send calls to a real human inbox (`hola@discocuatro.com` → Cloudflare Email Routing → forward to your gmail).
+> **Code-side hardening landed 2026-06-04** (branch `production-hardening`). Deploy/ops reference: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+12. ✅ **Tighten CORS in prod.** *(Confirmed 2026-06-04.)* Prod `allowedOrigins` is exactly `[env.FRONTEND_URL]`; the localhost + LAN-regex additions are gated on `NODE_ENV==='development'`. Just set `FRONTEND_URL` to the exact prod origin.
+13. ✅ **Error monitoring (Sentry).** *(Wired 2026-06-04, gated.)* `@sentry/node` (backend, [`instrument.ts`](backend/src/instrument.ts)) and `@sentry/nextjs` (frontend) are installed and **no-op until a DSN is set**. To enable: set `SENTRY_DSN` (backend) and `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` (frontend) in prod, then confirm a test event arrives.
+14. ✅ **Surface Resend errors.** *(Done 2026-06-04.)* All mailer calls in [`checkoutVerify.ts`](backend/src/routes/checkoutVerify.ts) go through a `safeSend` helper that logs `result.error`/throws and never fails a paid order. The `<ResendEmailButton>` remains the customer escape hatch.
+15. ✅ **Rate limit `/api/checkout/verify`.** *(Done 2026-06-04.)* `express-rate-limit` — 10/10 min per authenticated user (IPv6-safe key, skipped in tests), 429 on exceed.
+16. **DB backups.** Whatever host you pick, enable nightly automated backups. Railway/Render/Fly all offer this in one click. *(Ops — see `docs/DEPLOY.md` checklist.)*
+17. **DMARC + reply-to.** `p=none` → `p=quarantine` after monitoring; set `reply_to` to a real inbox. *(Ops — see `docs/DEPLOY.md`.)*
 18. **Header user menu.** Sign-in indicator + logout button. `POST /api/auth/logout` is wired; just no UI surface yet. Customers will ask.
-19. **Health-check ping.** UptimeRobot (free) hitting `GET /health` every 5 min. Page you if the backend dies.
+19. **Health-check ping.** UptimeRobot (free) hitting `GET /health` every 5 min. *(Ops — see `docs/DEPLOY.md`.)*
 
 ### Tier 4 — Nice-to-have, post-launch
 
