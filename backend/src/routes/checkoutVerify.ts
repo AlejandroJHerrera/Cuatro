@@ -69,6 +69,7 @@ export function checkoutVerifyRouter(opts: { verifier: PaymentVerifier; mailer?:
       expected: {
         amountLps: totalLps,
         accountRef: env.BANK_ACCOUNT_REF,
+        accountNumber: env.BANK_ACCOUNT_NUMBER,
         orderCode: order.code,
         holdCreatedAt: firstHold.createdAt,
       },

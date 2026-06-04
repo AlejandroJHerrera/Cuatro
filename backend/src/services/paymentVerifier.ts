@@ -7,6 +7,7 @@ export type VerifyInput = {
   expected: {
     amountLps: number;
     accountRef: string;
+    accountNumber: string;
     orderCode: string;
     holdCreatedAt: Date;
   };

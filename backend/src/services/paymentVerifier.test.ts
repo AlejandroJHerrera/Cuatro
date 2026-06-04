@@ -7,6 +7,7 @@ const baseInput: VerifyInput = {
   expected: {
     amountLps: 48,
     accountRef: "Banco Test 12345",
+    accountNumber: "100355841",
     orderCode: "ABC123",
     holdCreatedAt: new Date(),
   },
