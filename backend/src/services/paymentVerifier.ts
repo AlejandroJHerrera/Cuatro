@@ -154,11 +154,11 @@ const SYSTEM_PROMPT = `Eres un extractor de datos de comprobantes de transferenc
 
 Guía de campos:
 - isBankReceipt: true solo si la imagen es claramente un comprobante o notificación de transferencia bancaria/billetera. false para memes, fotos al azar o notas manuscritas.
-- destAccountNumber: el número de la CUENTA DESTINO (a la que se envió el dinero). Búscalo junto a "a la cuenta", "cuenta Nº", "cuenta destino" o "a nombre de". Devuelve solo los dígitos.
+- destAccountNumber: el número de la CUENTA DESTINO (a la que se envió el dinero). Búscalo junto a "a la cuenta", "cuenta Nº", "cuenta destino", "Cta. Crédito", "Cuenta" o "a nombre de". Devuelve solo los dígitos.
 - destName: el nombre del titular de la cuenta destino ("a nombre de ...").
 - senderName: quién envió o realizó la transferencia, si aparece.
 - amount: el monto como número, sin símbolo ni separador de miles (ej. "L8,210.00" → 8210).
-- currency: el código o símbolo de moneda tal como aparece (ej. "L", "HNL", "LPS").
+- currency: el código o símbolo de moneda tal como aparece (ej. "L", "HNL", "LPS"). Si la moneda va pegada al número (ej. "L8,210.00"), extráela como "L".
 - dateTimeIso: combina la fecha y la hora del comprobante en formato ISO 8601 con offset de Honduras (-06:00). Ej. fecha "22 mayo 2026" + hora "11:12 AM" → "2026-05-22T11:12:00-06:00". Si falta la hora, usa T00:00:00-06:00. Si no hay fecha, null.
 - reference: el número de referencia o de transacción ("Referencia", "No. de transacción", "comprobante"), como string.
 
