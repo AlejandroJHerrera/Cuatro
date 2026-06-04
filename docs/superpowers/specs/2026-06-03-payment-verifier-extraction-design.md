@@ -93,7 +93,7 @@ type VerifyVerdict =
 7. `reference` trims to empty → `missing-txn-id`
 8. otherwise → `{ ok: true, txnId: reference, senderName }`
 
-`normalizeDigits` strips spaces, dashes, and any non-digit characters before comparison. "Lempira" currency accepted set: `HNL`, `LPS`, `L`, `LEMPIRAS` (case-insensitive), and `null`-currency is tolerated only if the amount clearly parsed (kept conservative: require a Lempira marker → otherwise `unreadable`).
+`normalizeDigits` strips spaces, dashes, and any non-digit characters before comparison. Accepted Lempira currency markers (case-insensitive): `HNL`, `LPS`, `L`, `LEMPIRAS`. The check is conservative — a missing/`null` currency or any non-Lempira marker yields `unreadable` (we do not assume Lempira when the marker is absent).
 
 Each rejection carries a Spanish `detail` (≤120 chars) from a code template keyed by reason, e.g.:
 - `amount-mismatch` → `El monto no coincide — esperábamos L 2,000.00.`
