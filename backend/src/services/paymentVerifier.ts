@@ -18,6 +18,7 @@ export type RejectionReason =
   | "wrong-account"
   | "stale-receipt"
   | "missing-txn-id"
+  | "reference-mismatch"
   | "not-a-receipt"
   | "unreadable";
 
@@ -34,15 +35,18 @@ export type ReceiptFields = {
   currency: string | null;
   dateTimeIso: string | null;
   reference: string | null;
+  /** Free-text note the sender wrote (BAC "Descripción"/"Detalle"). Carries the order code. */
+  description: string | null;
 };
 
 const LEMPIRA_MARKERS = new Set(["HNL", "LPS", "L", "LEMPIRA", "LEMPIRAS"]);
-const STALE_MS = 24 * 60 * 60 * 1000;
-const FUTURE_SKEW_MS = 10 * 60 * 1000; // tolerate small bank/server clock skew
 
-const STATIC_DETAIL: Record<Exclude<RejectionReason, "amount-mismatch">, string> = {
+const STATIC_DETAIL: Record<
+  Exclude<RejectionReason, "amount-mismatch" | "reference-mismatch">,
+  string
+> = {
   "wrong-account": "La transferencia no fue a la cuenta correcta.",
-  "stale-receipt": "La fecha del comprobante está fuera del rango válido (últimas 24 horas).",
+  "stale-receipt": "El comprobante debe tener la fecha de hoy.",
   "missing-txn-id": "No encontramos un número de referencia en el comprobante.",
   "not-a-receipt": "La imagen no parece un comprobante bancario.",
   unreadable: "No pudimos leer el comprobante con claridad.",
@@ -50,6 +54,11 @@ const STATIC_DETAIL: Record<Exclude<RejectionReason, "amount-mismatch">, string>
 
 function normalizeDigits(s: string | null): string {
   return (s ?? "").replace(/\D/g, "");
+}
+
+/** Uppercase + strip everything but A-Z/0-9, for forgiving order-code matching. */
+function normalizeCode(s: string | null): string {
+  return (s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
 function formatLps(amount: number): string {
@@ -61,14 +70,15 @@ function formatLps(amount: number): string {
 
 /**
  * Pure verdict logic. The model only extracts ReceiptFields; this function
- * applies the rules (account-number gate, exact amount, strict 24h window,
- * non-empty reference) and is the primary unit-test surface.
+ * applies the rules (account-number gate, exact amount, same-day receipt,
+ * non-empty bank reference, order code present in the sender's description)
+ * and is the primary unit-test surface.
  * Assumes expected.accountNumber is digits-only (validated at the env layer).
  * fields.destName is extracted for display/logging only and is not gated on.
  */
 export function judgeReceipt(
   fields: ReceiptFields,
-  expected: { accountNumber: string; amountLps: number },
+  expected: { accountNumber: string; amountLps: number; orderCode: string },
   now: Date,
 ): VerifyVerdict {
   if (!fields.isBankReceipt) {
@@ -97,13 +107,22 @@ export function judgeReceipt(
   if (!when || Number.isNaN(when.getTime())) {
     return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
   }
-  const ageMs = now.getTime() - when.getTime();
-  if (ageMs > STALE_MS || ageMs < -FUTURE_SKEW_MS) {
+  // Same-day-only freshness: the receipt's Honduras calendar date must be today.
+  if (honduranDateString(when) !== honduranDateString(now)) {
     return { ok: false, reason: "stale-receipt", detail: STATIC_DETAIL["stale-receipt"] };
   }
 
   if (!fields.reference || fields.reference.trim() === "") {
     return { ok: false, reason: "missing-txn-id", detail: STATIC_DETAIL["missing-txn-id"] };
+  }
+
+  // The customer must write the order code in the transfer's description.
+  if (!normalizeCode(fields.description).includes(normalizeCode(expected.orderCode))) {
+    return {
+      ok: false,
+      reason: "reference-mismatch",
+      detail: `Escribe la referencia ${expected.orderCode} en la descripción de la transferencia.`,
+    };
   }
 
   return { ok: true, txnId: fields.reference.trim(), senderName: fields.senderName };
@@ -135,6 +154,7 @@ const EXTRACT_TOOL = {
       currency: { type: ["string", "null"] },
       dateTimeIso: { type: ["string", "null"] },
       reference: { type: ["string", "null"] },
+      description: { type: ["string", "null"] },
     },
     required: [
       "isBankReceipt",
@@ -145,6 +165,7 @@ const EXTRACT_TOOL = {
       "currency",
       "dateTimeIso",
       "reference",
+      "description",
     ],
     additionalProperties: false,
   },
@@ -159,10 +180,21 @@ Guía de campos:
 - senderName: quién envió o realizó la transferencia, si aparece.
 - amount: el monto como número, sin símbolo ni separador de miles (ej. "L8,210.00" → 8210).
 - currency: el código o símbolo de moneda tal como aparece (ej. "L", "HNL", "LPS"). Si la moneda va pegada al número (ej. "L8,210.00"), extráela como "L".
-- dateTimeIso: combina la fecha y la hora del comprobante en formato ISO 8601 con offset de Honduras (-06:00). Ej. fecha "22 mayo 2026" + hora "11:12 AM" → "2026-05-22T11:12:00-06:00". Si falta la hora, usa T00:00:00-06:00. Si no hay fecha, null.
-- reference: el número de referencia o de transacción ("Referencia", "No. de transacción", "comprobante"), como string.
+- dateTimeIso: combina la fecha y la hora del comprobante en formato ISO 8601 con offset de Honduras (-06:00). Ej. fecha "22 mayo 2026" + hora "11:12 AM" → "2026-05-22T11:12:00-06:00". Si el comprobante NO indica el año, usa el año que haga la fecha igual o anterior a HOY (la fecha de hoy se indica en el mensaje) y lo más reciente posible; casi siempre es el año actual. Si falta la hora, usa T00:00:00-06:00. Si no hay fecha, null.
+- reference: el número de referencia o de transacción del banco ("Referencia", "No. de transacción", "Nº comprobante"), como string.
+- description: el texto que el remitente escribió en el campo de nota/concepto ("Descripción", "Detalle", "Concepto", "Motivo"). Aquí suele ir un código de referencia del cliente. Si el campo dice "(Sin detalle)", está vacío o no existe, devuelve null.
 
 Tanto los comprobantes del lado de quien envía como las notificaciones del lado de quien recibe son válidos: en ambos casos la cuenta destino es la que aparece tras "a nombre de" / "a la cuenta".`;
+
+/** Honduras calendar date (YYYY-MM-DD) for an instant — anchors year resolution. */
+export function honduranDateString(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
 
 export class ClaudeVerifier implements PaymentVerifier {
   private client: Anthropic;
@@ -171,6 +203,8 @@ export class ClaudeVerifier implements PaymentVerifier {
   }
 
   async verify(input: VerifyInput): Promise<VerifyVerdict> {
+    const now = new Date();
+    const today = honduranDateString(now);
     const response = await this.client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 512,
@@ -189,7 +223,10 @@ export class ClaudeVerifier implements PaymentVerifier {
                 data: input.imageBuffer.toString("base64"),
               },
             },
-            { type: "text", text: "Extrae los campos de este comprobante." },
+            {
+              type: "text",
+              text: `Hoy es ${today} (Honduras). Extrae los campos de este comprobante.`,
+            },
           ],
         },
       ],
@@ -203,8 +240,12 @@ export class ClaudeVerifier implements PaymentVerifier {
     const fields = toolUse.input as ReceiptFields;
     return judgeReceipt(
       fields,
-      { accountNumber: input.expected.accountNumber, amountLps: input.expected.amountLps },
-      new Date(),
+      {
+        accountNumber: input.expected.accountNumber,
+        amountLps: input.expected.amountLps,
+        orderCode: input.expected.orderCode,
+      },
+      now,
     );
   }
 }

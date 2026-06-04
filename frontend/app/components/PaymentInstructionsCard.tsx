@@ -29,6 +29,9 @@ export function PaymentInstructionsCard({
         <Row label={copy.checkout.instructions.amountLabel} value={`L ${amountLps.toFixed(2)}`} onCopy={() => onCopy(amountLps.toFixed(2))} />
         <Row label={copy.checkout.instructions.referencePrefix} value={orderCode} onCopy={() => onCopy(orderCode)} />
       </dl>
+      <p className="m-0 text-gold/90 text-xs leading-snug">
+        {copy.checkout.instructions.referenceNote}
+      </p>
     </section>
   );
 }

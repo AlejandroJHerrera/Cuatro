@@ -112,6 +112,8 @@ export const copy = {
       title: "TRANSFIERE EL PAGO",
       body: "Realiza la transferencia con los datos abajo y luego sube tu comprobante.",
       referencePrefix: "REFERENCIA",
+      referenceNote:
+        "Importante: escribe esta REFERENCIA en la descripción (detalle/concepto) de la transferencia. La verificamos para confirmar tu pago.",
       accountLabel: "CUENTA",
       amountLabel: "MONTO",
       copy: "COPIAR",

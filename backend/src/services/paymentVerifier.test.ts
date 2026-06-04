@@ -40,15 +40,16 @@ const bacFields: ReceiptFields = {
   currency: "L",
   dateTimeIso: "2026-05-22T11:12:00-06:00",
   reference: "412467270",
+  description: null, // matches the real sample's "(Sin detalle)"
 };
 
 // A real Cuatro order: 2 seats × L1,000, paid to the configured account.
-const order = { accountNumber: "100355841", amountLps: 2000 };
+const order = { accountNumber: "100355841", amountLps: 2000, orderCode: "ABC123" };
 // "now" shortly after a matching receipt's timestamp.
 const now = new Date("2026-05-22T13:00:00-06:00");
 
 function approvable(): ReceiptFields {
-  return { ...bacFields, destAccountNumber: "100355841", amount: 2000 };
+  return { ...bacFields, destAccountNumber: "100355841", amount: 2000, description: "ABC123" };
 }
 
 test("judgeReceipt approves a matching, recent receipt", () => {
@@ -68,15 +69,15 @@ test("judgeReceipt rejects amount mismatch", () => {
   if (!v.ok) expect(v.reason).toBe("amount-mismatch");
 });
 
-test("judgeReceipt rejects a receipt older than 24h", () => {
-  const later = new Date("2026-06-03T12:00:00-06:00");
+test("judgeReceipt rejects a receipt from a previous day", () => {
+  const later = new Date("2026-06-03T12:00:00-06:00"); // receipt is 2026-05-22
   const v = judgeReceipt(approvable(), order, later);
   expect(v.ok).toBe(false);
   if (!v.ok) expect(v.reason).toBe("stale-receipt");
 });
 
 test("judgeReceipt rejects a future-dated receipt", () => {
-  const earlier = new Date("2026-05-20T11:12:00-06:00");
+  const earlier = new Date("2026-05-20T11:12:00-06:00"); // receipt is 2026-05-22
   const v = judgeReceipt(approvable(), order, earlier);
   expect(v.ok).toBe(false);
   if (!v.ok) expect(v.reason).toBe("stale-receipt");
@@ -105,16 +106,16 @@ test("judgeReceipt normalizes account numbers with spaces/dashes", () => {
   expect(v.ok).toBe(true);
 });
 
-test("judgeReceipt rejects a receipt dated 15 minutes in the future", () => {
-  const fifteenMinEarlier = new Date("2026-05-22T10:57:00-06:00"); // receipt is 11:12
-  const v = judgeReceipt(approvable(), order, fifteenMinEarlier);
+test("judgeReceipt rejects a receipt dated tomorrow", () => {
+  const dayBefore = new Date("2026-05-21T13:00:00-06:00"); // receipt is 2026-05-22
+  const v = judgeReceipt(approvable(), order, dayBefore);
   expect(v.ok).toBe(false);
   if (!v.ok) expect(v.reason).toBe("stale-receipt");
 });
 
-test("judgeReceipt accepts a receipt within the future clock-skew window (9 min)", () => {
-  const nineMinEarlier = new Date("2026-05-22T11:03:00-06:00"); // receipt is 11:12
-  const v = judgeReceipt(approvable(), order, nineMinEarlier);
+test("judgeReceipt accepts a same-day receipt regardless of time of day", () => {
+  const sameDayLate = new Date("2026-05-22T23:30:00-06:00"); // receipt is 11:12 same day
+  const v = judgeReceipt(approvable(), order, sameDayLate);
   expect(v.ok).toBe(true);
 });
 
@@ -122,4 +123,21 @@ test("judgeReceipt rejects an unparseable receipt date as unreadable", () => {
   const v = judgeReceipt({ ...approvable(), dateTimeIso: "not-a-date" }, order, now);
   expect(v.ok).toBe(false);
   if (!v.ok) expect(v.reason).toBe("unreadable");
+});
+
+test("judgeReceipt rejects when the order code is missing from the description", () => {
+  const v = judgeReceipt({ ...approvable(), description: "(Sin detalle)" }, order, now);
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.reason).toBe("reference-mismatch");
+});
+
+test("judgeReceipt rejects when the description is null", () => {
+  const v = judgeReceipt({ ...approvable(), description: null }, order, now);
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.reason).toBe("reference-mismatch");
+});
+
+test("judgeReceipt accepts the order code in the description ignoring case/spaces/punctuation", () => {
+  const v = judgeReceipt({ ...approvable(), description: "Pago orden: abc-123 ¡gracias!" }, order, now);
+  expect(v.ok).toBe(true);
 });
