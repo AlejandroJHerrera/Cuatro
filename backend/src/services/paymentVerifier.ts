@@ -24,6 +24,87 @@ export type VerifyVerdict =
   | { ok: true; txnId: string; senderName: string | null }
   | { ok: false; reason: RejectionReason; detail: string };
 
+export type ReceiptFields = {
+  isBankReceipt: boolean;
+  destAccountNumber: string | null;
+  destName: string | null;
+  senderName: string | null;
+  amount: number | null;
+  currency: string | null;
+  dateTimeIso: string | null;
+  reference: string | null;
+};
+
+const LEMPIRA_MARKERS = new Set(["HNL", "LPS", "L", "LEMPIRAS"]);
+const STALE_MS = 24 * 60 * 60 * 1000;
+const FUTURE_SKEW_MS = 10 * 60 * 1000; // tolerate small bank/server clock skew
+
+const STATIC_DETAIL: Record<Exclude<RejectionReason, "amount-mismatch">, string> = {
+  "wrong-account": "La transferencia no fue a la cuenta correcta.",
+  "stale-receipt": "El comprobante es de hace más de 24 horas.",
+  "missing-txn-id": "No encontramos un número de referencia en el comprobante.",
+  "not-a-receipt": "La imagen no parece un comprobante bancario.",
+  unreadable: "No pudimos leer el comprobante con claridad.",
+};
+
+function normalizeDigits(s: string | null): string {
+  return (s ?? "").replace(/\D/g, "");
+}
+
+function formatLps(amount: number): string {
+  return `L ${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * Pure verdict logic. The model only extracts ReceiptFields; this function
+ * applies the rules (account-number gate, exact amount, strict 24h window,
+ * non-empty reference) and is the primary unit-test surface.
+ */
+export function judgeReceipt(
+  fields: ReceiptFields,
+  expected: { accountNumber: string; amountLps: number },
+  now: Date,
+): VerifyVerdict {
+  if (!fields.isBankReceipt) {
+    return { ok: false, reason: "not-a-receipt", detail: STATIC_DETAIL["not-a-receipt"] };
+  }
+
+  if (normalizeDigits(fields.destAccountNumber) !== normalizeDigits(expected.accountNumber)) {
+    return { ok: false, reason: "wrong-account", detail: STATIC_DETAIL["wrong-account"] };
+  }
+
+  const currencyOk =
+    fields.currency != null && LEMPIRA_MARKERS.has(fields.currency.trim().toUpperCase());
+  if (fields.amount == null || !currencyOk) {
+    return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
+  }
+  if (Math.abs(fields.amount - expected.amountLps) >= 0.005) {
+    return {
+      ok: false,
+      reason: "amount-mismatch",
+      detail: `El monto no coincide — esperábamos ${formatLps(expected.amountLps)}.`,
+    };
+  }
+
+  const when = fields.dateTimeIso ? new Date(fields.dateTimeIso) : null;
+  if (!when || Number.isNaN(when.getTime())) {
+    return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
+  }
+  const ageMs = now.getTime() - when.getTime();
+  if (ageMs > STALE_MS || ageMs < -FUTURE_SKEW_MS) {
+    return { ok: false, reason: "stale-receipt", detail: STATIC_DETAIL["stale-receipt"] };
+  }
+
+  if (!fields.reference || fields.reference.trim() === "") {
+    return { ok: false, reason: "missing-txn-id", detail: STATIC_DETAIL["missing-txn-id"] };
+  }
+
+  return { ok: true, txnId: fields.reference.trim(), senderName: fields.senderName };
+}
+
 export interface PaymentVerifier {
   verify(input: VerifyInput): Promise<VerifyVerdict>;
 }
