@@ -41,9 +41,6 @@ export function PaymentInstructionsCard({
 }) {
   return (
     <section className="border border-ash/35 p-5 flex flex-col gap-4">
-      <p className="m-0 border-l-2 border-gold bg-gold/[0.06] px-4 py-3 text-gold text-sm leading-snug">
-        {copy.checkout.instructions.referenceNote}
-      </p>
       <header className="flex flex-col gap-1">
         <span
           className="font-mono text-[0.6875rem] uppercase text-bulb/55"
@@ -62,6 +59,9 @@ export function PaymentInstructionsCard({
         />
         <Row label={copy.checkout.instructions.referencePrefix} value={orderCode} />
       </dl>
+      <p className="m-0 border-l-2 border-gold bg-gold/[0.06] px-4 py-3 text-gold text-sm leading-snug">
+        {copy.checkout.instructions.referenceNote}
+      </p>
     </section>
   );
 }
