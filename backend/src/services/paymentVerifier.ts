@@ -42,7 +42,7 @@ const FUTURE_SKEW_MS = 10 * 60 * 1000; // tolerate small bank/server clock skew
 
 const STATIC_DETAIL: Record<Exclude<RejectionReason, "amount-mismatch">, string> = {
   "wrong-account": "La transferencia no fue a la cuenta correcta.",
-  "stale-receipt": "El comprobante es de hace más de 24 horas.",
+  "stale-receipt": "La fecha del comprobante está fuera del rango válido (últimas 24 horas).",
   "missing-txn-id": "No encontramos un número de referencia en el comprobante.",
   "not-a-receipt": "La imagen no parece un comprobante bancario.",
   unreadable: "No pudimos leer el comprobante con claridad.",

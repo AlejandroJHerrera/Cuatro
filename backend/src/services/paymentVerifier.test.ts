@@ -117,3 +117,9 @@ test("judgeReceipt accepts a receipt within the future clock-skew window (9 min)
   const v = judgeReceipt(approvable(), order, nineMinEarlier);
   expect(v.ok).toBe(true);
 });
+
+test("judgeReceipt rejects an unparseable receipt date as unreadable", () => {
+  const v = judgeReceipt({ ...approvable(), dateTimeIso: "not-a-date" }, order, now);
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.reason).toBe("unreadable");
+});
