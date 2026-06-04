@@ -117,6 +117,7 @@ export const copy = {
       accountLabel: "CUENTA",
       amountLabel: "MONTO",
       copy: "COPIAR",
+      copied: "COPIADO ✓",
     },
     upload: {
       label: "SUBIR COMPROBANTE",
