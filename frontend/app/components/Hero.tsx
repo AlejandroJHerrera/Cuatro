@@ -70,7 +70,7 @@ export function Hero({ movie }: { movie: Movie }) {
           </h1>
           <p
             className="
-              m-0 font-display italic font-light
+              m-0 font-display italic font-light whitespace-nowrap
               text-bulb/85
               text-[clamp(1rem,2vw,1.5rem)]
               leading-snug
@@ -81,8 +81,8 @@ export function Hero({ movie }: { movie: Movie }) {
           </p>
           <p
             className="
-              mt-2 m-0 font-display uppercase text-bulb
-              text-[clamp(1.25rem,2.4vw,1.875rem)]
+              mt-2 m-0 font-display uppercase text-bulb whitespace-nowrap
+              text-[clamp(1rem,1.9vw,1.5rem)]
               leading-tight
             "
             style={{ letterSpacing: "0.03em" }}

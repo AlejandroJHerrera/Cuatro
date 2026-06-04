@@ -11,9 +11,10 @@ Drop this file (plus `PRODUCT.md`, `DESIGN.md`, and `PLAN.md` in the same direct
 A production web app to sell tickets to a **single movie function**: a documentary screening for the album **"CUATRO"** by **Jose Javier Diaz** (4 tracks named after seasons + cardinal directions).
 
 - **Venue (placeholder, swap when finalized):** Cinepolis Altara, San Pedro Sula, Honduras (SALA 4 — irregular 121-seat house).
-- **Showtime (placeholder):** 27 June 2026, 6:00 PM.
+- **Showtime:** **24 June 2026, 7:00 PM** (was 27 Jun 6 PM — updated 2026-06-03).
+- **Proceeds:** A beneficio de la Casa de Jose — surfaced on the landing programmer's note.
 - **Audience:** Spanish-speaking music + film fans, mostly arriving on phones from a shared link.
-- **Flow:** sign in (Google OAuth or email + password) → pick seats on an interactive map → confirm reservation → **bank-transfer screenshot upload, AI-verified by Claude Sonnet 4.6** → emailed confirmation with per-seat signed QR codes → door staff scan QRs at the door (with manual check-in fallback).
+- **Flow:** sign up (or sign in) with email + password → pick seats on an interactive map → confirm reservation → **bank-transfer screenshot upload, AI-verified by Claude Sonnet 4.6** → emailed confirmation with per-seat signed QR codes → door staff scan QRs at the door (with manual check-in fallback).
 
 Project root: `/Users/alejandro/Desktop/Cuatro/`
 
@@ -26,13 +27,13 @@ Project root: `/Users/alejandro/Desktop/Cuatro/`
 | Fonts | Fraunces (display serif), DM Sans (body), JetBrains Mono (operational), all via `next/font/google` |
 | Backend | Express 5 + TypeScript on `:4000` |
 | Database | PostgreSQL 16 via Prisma 5.22 — `docker compose up -d` on host port **5433** |
-| Auth | Google OAuth + email/password via Passport.js + Postgres-backed session cookie. Google strategy registered conditionally on `GOOGLE_CLIENT_ID/SECRET`. |
+| Auth | Email/password via Passport.js + Postgres-backed session cookie. Google OAuth strategy is still wired backend-side (conditional on `GOOGLE_CLIENT_ID/SECRET`) but **the UI button on `/signin` was removed 2026-06-03** — sign-up is now the default visible form. |
 | Payments | **Bank transfer + Claude Sonnet 4.6 verification.** Customer uploads a receipt screenshot to `POST /api/checkout/verify`; the route calls the Anthropic SDK (`@anthropic-ai/sdk`) with the image, validates via single-tool-use, converts holds → Tickets, and emits HMAC-SHA256-signed QR payloads. Screenshots are never persisted (multer `memoryStorage`). |
 | Email | Resend + `@react-email/components`. Three templates: customer confirmation (with inline QR PNGs), internal payment archive, customer rejection. |
 | Door entry | Per-seat HMAC-signed QR codes, scanned by door staff via `/admin/scan` (jsqr camera viewfinder + floating verdict toast with smooth pop-in/out). Admins fall back to manual check-in on `/admin/door`. |
 | Testing | Vitest + supertest backend harness. 25 tests across 8 files. Truncating Postgres `cuatro_test` DB on `:5433`. |
 
-Max seats per order: **8**. Price: **L 12.00** per seat. Constants in [`frontend/lib/seats.ts`](frontend/lib/seats.ts): `PRICE_PER_SEAT_LPS`, `formatTotalLPS`, `formatPriceLPS`.
+Max seats per order: **121** (raised from 8 on 2026-06-03 — effectively the venue capacity, no per-order cap). Price: **L 1,000** per seat (raised from L 12 on 2026-06-03). Constants in [`frontend/lib/seats.ts`](frontend/lib/seats.ts): `PRICE_PER_SEAT_LPS`, `MAX_SEATS_PER_ORDER`, `formatTotalLPS`, `formatPriceLPS`. Backend mirrors via `MAX_SEATS_PER_HOLD` in [`services/holds.ts`](backend/src/services/holds.ts) and `Movie.priceLps` (seeded value).
 
 ## Design system (impeccable workflow)
 
@@ -175,7 +176,7 @@ frontend/
 │   ├── checkout/page.tsx           Bank-transfer instructions surface
 │   ├── success/page.tsx            Per-seat ticket stubs + per-seat QR
 │   ├── my-tickets/page.tsx         Order history
-│   ├── signin/page.tsx             Google + email/password
+│   ├── signin/page.tsx             Email/password only (Google button removed 2026-06-03)
 │   ├── cancel/page.tsx             Active / expired hold variants
 │   ├── admin/
 │   │   ├── scan/                   ⭐ Door-staff camera viewfinder + verdict overlay
@@ -198,8 +199,9 @@ frontend/
 │       ├── QrBlock.tsx                     ⭐ Client-side QR PNG via `qrcode` package
 │       ├── ResendEmailButton.tsx           ⭐ Real POST /api/orders/:code/resend-email
 │       ├── OrderCard.tsx                   ⭐ Uses order.code (was order.id)
-│       ├── OAuthButton.tsx
-│       ├── EmailAuthForm.tsx
+│       ├── PhotoCarousel.tsx               ⭐ Landing carousel (8 WhatsApp photos, 4s autoplay, 1s crossfade)
+│       ├── OAuthButton.tsx                 (orphaned — no longer rendered on /signin)
+│       ├── EmailAuthForm.tsx               Default mode = signup (flipped 2026-06-03)
 │       └── CancelClient.tsx
 ├── lib/
 │   ├── copy.ts                     +checkout.instructions/upload/verifying/rejected/softCap
@@ -213,16 +215,17 @@ frontend/
 │   ├── format.ts
 │   └── useCountdown.ts
 └── public/
-    └── cover.jpg
+    ├── cover.jpg                           Hero album-cover JPG (CD-masked)
+    └── WhatsApp Image 2026-06-02 at 9.*.jpeg   8 carousel photos consumed by <PhotoCarousel>
 ```
 
 ## Surface notes
 
 ### Landing (`/`)
-Hero uses the real album cover JPG with a radial CSS mask that hides the starfield/Earth/lens flare so only the CD blends on Hall Black. Programmer's note + four-row tracklist + fórmula + venue + map link unchanged.
+Hero uses the real album cover JPG with a radial CSS mask that hides the starfield/Earth/lens flare so only the CD blends on Hall Black. Under the **CUATRO** wordmark sits the italic display subtitle **"LA BANDA SONORA DE LA VIDA"** (added 2026-06-03), then the dateLine. The hero CTA is mobile-unchanged but on `sm+` is widened (`sm:min-w-[28ch] sm:px-16`) and horizontally centered (`sm:items-center` on the wrapping flex column). Programmer's note now uses bigger body type (`text-lg sm:text-xl`), includes the italic line **"A beneficio de la Casa de Jose"**, and embeds the auto-cycling `<PhotoCarousel>` (8 WhatsApp photos, 4s interval, 1s crossfade, gold pill indicator). Four-row tracklist + fórmula + venue + map link unchanged.
 
 ### Seat picker (`/seats`)
-Real **SALA 4** layout (121 seats / 9 rows / 19-col master grid). Four seat states with pattern-plus-color. Borders are off-white (`border-bulb/40` idle, `border-bulb` hover, dimmer for held/taken). Keyboard nav. Max-8 enforcement. 10-min client-side hold timer.
+Real **SALA 4** layout (121 seats / 9 rows / 19-col master grid). Four seat states with pattern-plus-color. Borders are off-white (`border-bulb/40` idle, `border-bulb` hover, dimmer for held/taken). Keyboard nav. **No per-order seat cap** — `MAX_SEATS_PER_ORDER = 121` (venue capacity). The `maxNotice` plumbing in [`SeatPickerApp.tsx`](frontend/app/components/SeatPickerApp.tsx) + [`CartPanel.tsx`](frontend/app/components/CartPanel.tsx) is still wired but never fires. 10-min client-side hold timer.
 
 ### Checkout (`/checkout`)
 Reads `?seats=` + `?expires=`. SSR fetches `POST /api/orders/pending` to allocate (or reuse) the 6-char `orderCode`. Renders eyebrow + marquee + dateLine + venue + `<SeatsTable>` + `<CheckoutClient>` with three phases:
@@ -241,7 +244,7 @@ Reads `?order=<code>` only. Looks up the matching paid order from `getMyOrders()
 Stack of `<OrderCard>` rows. Each card uses `order.code` for display, the reopen-href to `/success?order=<code>`, and the `ResendEmailButton`. Past orders dim + hide resend.
 
 ### Sign in (`/signin`)
-Google OAuth (only with env keys) + `<EmailAuthForm>` with sign-in/sign-up toggle. `?next=` sanitized via allow-list.
+**Email/password only** (Google OAuth button removed from the UI 2026-06-03 — backend route still exists, just unlinked). `<EmailAuthForm>` opens in **signup** mode by default; the secondary toggle button drops to sign-in. `?next=` sanitized via allow-list.
 
 ### Cancel (`/cancel`)
 Active vs expired variants, swaps without re-fetching. Provider-neutral copy.
@@ -377,15 +380,28 @@ To enable Google OAuth locally:
 2. Authorized redirect URI: `http://localhost:4000/api/auth/google/callback`.
 3. Drop `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` into `backend/.env` and restart.
 
-## Current state (as of 2026-06-02 evening)
+## Current state (as of 2026-06-03 evening)
 
-The payment-pivot plan is **fully implemented** (19/19 tasks landed). On top of that, this session added:
+The payment-pivot plan is **fully implemented** (19/19 tasks landed). The 2026-06-02 session added:
 
 - **Hosted-URL QR delivery** ([`routes/ticketQr.ts`](backend/src/routes/ticketQr.ts) + email template swap) so QRs render inline in Gmail. PNG attachments are still sent alongside as a fallback.
 - **Next.js rewrite proxy** ([`frontend/next.config.ts`](frontend/next.config.ts)) so the browser only ever talks to the same origin as the frontend. Enables single-tunnel ngrok for phone testing and removes mixed-content / CORS issues.
 - **Smooth verdict toast** in `/admin/scan` — replaced the full-screen color slam with a centered card that pops in (`animate-scan-pop` keyframe) with icon + status + seat·name.
 - **Dev LAN CORS regex** in [`backend/src/index.ts`](backend/src/index.ts) so a phone on the LAN can reach the dev backend directly when not tunneling.
-- **Resend sandbox sender** (`onboarding@resend.dev`) in [`backend/src/services/email.ts`](backend/src/services/email.ts) — works for testing to the Resend account owner's email, **not for real customers**. See Tier 1 below.
+
+### 2026-06-03 session — UI + business changes
+
+- **Showtime moved** to 24 Jun 2026 7:00 PM. Placeholder ISO updated in [`frontend/lib/movie.ts`](frontend/lib/movie.ts:24) and seed `startsAt` in [`backend/prisma/seed.ts`](backend/prisma/seed.ts:38). **Re-run `prisma migrate reset --force && npm run db:seed` (or edit `Movie.startsAt` in Prisma Studio) to push the change into the dev DB** — frontend constants alone don't flip the backend's `Movie` row.
+- **Price → L 1,000 per seat.** [`frontend/lib/seats.ts`](frontend/lib/seats.ts:64), [`backend/prisma/seed.ts`](backend/prisma/seed.ts:44), [`backend/src/test/factories.ts`](backend/src/test/factories.ts:28) all updated. Same re-seed caveat applies for the backend Movie row. Format note: `formatTotalLPS` still emits `$1000.00 LPS` — consider tightening to `L 1,000` (no decimals, Lempira sigil) as a polish pass.
+- **Per-order seat cap removed** — `MAX_SEATS_PER_ORDER` and `MAX_SEATS_PER_HOLD` raised 8 → 121 (venue capacity, effectively unlimited).
+- **Hero subtitle** "LA BANDA SONORA DE LA VIDA" added under CUATRO ([`Hero.tsx`](frontend/app/components/Hero.tsx) + [`copy.ts`](frontend/lib/copy.ts) `hero.subtitle`).
+- **Hero CTA** mobile unchanged; desktop (`sm+`) widened (`sm:min-w-[28ch] sm:px-16`) and centered (`sm:items-center` on the wrapping flex column).
+- **Programmer's note** bumped from `text-base sm:text-lg` → `text-lg sm:text-xl`. Added italic display line **"A beneficio de la Casa de Jose"** ([`copy.ts`](frontend/lib/copy.ts) `note.benefit`).
+- **New `<PhotoCarousel>` component** ([`frontend/app/components/PhotoCarousel.tsx`](frontend/app/components/PhotoCarousel.tsx)) embedded in the programmer's note. 8 WhatsApp JPEGs from `public/`, hardcoded list, `setInterval(4000)`, opacity-based crossfade with `transition-opacity duration-1000`, gold pill dot indicators. `cover.jpg` deliberately excluded.
+- **Google sign-in button removed** from [`signin/page.tsx`](frontend/app/signin/page.tsx) — `<OAuthButton>` + divider gone, divider helper deleted. `OAuthButton.tsx` is now dead code (kept on disk in case you reintroduce OAuth).
+- **Default auth mode flipped to signup** in [`EmailAuthForm.tsx`](frontend/app/components/EmailAuthForm.tsx:24). The existing toggle button drops to sign-in as the secondary path.
+- **Production domain registered: `discocuatro.com`** on Cloudflare. Resend domain verified (SPF + DKIM), DMARC TXT set at `p=none`. `FROM` swapped in [`backend/src/services/email.ts:18`](backend/src/services/email.ts:18) → `Cuatro <no-reply@discocuatro.com>`.
+- **Real bank account wired**: `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` set identically in `backend/.env` (`BANK_ACCOUNT_REF`) and `frontend/.env.local` (`NEXT_PUBLIC_BANK_ACCOUNT_REF`). Claude verifier will cross-check the screenshot against this string.
 
 No further coding is required to make the v1 flow functional. What follows is the production-ready punch list.
 
@@ -394,11 +410,13 @@ No further coding is required to make the v1 flow functional. What follows is th
 ### Tier 1 — Blockers before any real customer can buy a ticket
 
 1. **Rotate leaked credentials** — the Resend API key and the ngrok authtoken were both pasted in a chat transcript and should be considered compromised. Revoke + regenerate in their respective dashboards.
-2. **Verify a real sending domain on Resend.** Domain: `discocuatro.com` (registered on Cloudflare). Add Resend's SPF + DKIM records and a DMARC TXT at Cloudflare DNS, wait for "Verified" in the Resend dashboard. Then swap `FROM` in [`email.ts`](backend/src/services/email.ts:9) off `onboarding@resend.dev` to `no-reply@discocuatro.com`. Without this, customer confirmations only deliver to the Resend account owner.
-3. **Real bank account details.** Update `BANK_ACCOUNT_REF` in `backend/.env` **and** `NEXT_PUBLIC_BANK_ACCOUNT_REF` in `frontend/.env.local` to production values. They must match exactly — Claude cross-checks the screenshot against the backend value while the frontend renders the customer-facing copy.
-4. **Switch off FakeVerifier.** [`backend/src/index.ts`](backend/src/index.ts) currently uses `new FakeVerifier({ ok: true, txnId: "TXN-DEV-1", senderName: "Prueba" })` (every screenshot auto-approves). Restore `new ClaudeVerifier()` and set a real `ANTHROPIC_API_KEY`.
-5. **Promote at least one admin account.** Sign up via the UI → Prisma Studio → set `User.role = admin` (and `doorStaff` for additional staff).
-6. **Real end-to-end smoke test with the real verifier.** Pick seats → upload a real Banco Atlántida / Tigo Money screenshot → verify approval → check email → scan QR from another phone. Document any false-positives/negatives and tune `SYSTEM_PROMPT` in [`paymentVerifier.ts`](backend/src/services/paymentVerifier.ts).
+2. ✅ **Verify a real sending domain on Resend.** *(Done 2026-06-03.)* `discocuatro.com` registered on Cloudflare; SPF + DKIM verified on Resend; DMARC TXT live at `p=none`. `FROM` is `Cuatro <no-reply@discocuatro.com>` in [`email.ts:18`](backend/src/services/email.ts:18). **Still TODO**: actual deliverability test (send the confirmation to a Gmail address that isn't the Resend account owner, check inbox + spam, optionally score via mail-tester.com).
+3. ✅ **Real bank account details.** *(Done 2026-06-03.)* `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` set identically in `backend/.env` (`BANK_ACCOUNT_REF`) and `frontend/.env.local` (`NEXT_PUBLIC_BANK_ACCOUNT_REF`).
+4. **Switch off FakeVerifier.** [`backend/src/index.ts`](backend/src/index.ts) currently uses `new FakeVerifier({ ok: true, txnId: "TXN-DEV-1", senderName: "Prueba" })` (every screenshot auto-approves). Restore `new ClaudeVerifier()` and set a real `ANTHROPIC_API_KEY` in `backend/.env`. Tune `SYSTEM_PROMPT` in [`paymentVerifier.ts`](backend/src/services/paymentVerifier.ts) for BAC Honduras receipt formatting before opening sales.
+5. **Apply the new date + price to the DB.** Editing constants only updated the frontend reads; the backend `Movie` row still has the old values until you re-seed. Run `cd backend && npx prisma migrate reset --force && npm run db:seed`, OR edit `Movie.startsAt` (`2026-06-24T19:00:00-06:00`) and `Movie.priceLps` (`1000`) directly in Prisma Studio.
+6. **Promote at least one admin account.** Sign up via the UI → Prisma Studio → set `User.role = admin` (and `doorStaff` for additional staff).
+7. **Confirm venue + showtime are final.** The 24 Jun 7 PM datetime is what's coded; venue name still says CINEPOLIS ALTARA — update `Movie.venueName` / `Movie.venueAddress` if those have shifted.
+8. **Real end-to-end smoke test with the real verifier.** Pick seats → upload a real BAC / Tigo Money screenshot → verify approval → check email lands in Gmail (not spam) → scan QR from another phone via `/admin/scan` → confirm door manifest at `/admin/door` reflects the redemption. Document any LLM false-positives/negatives and iterate on `SYSTEM_PROMPT`.
 
 ### Tier 2 — Hosting + deployment
 
@@ -427,8 +445,11 @@ No further coding is required to make the v1 flow functional. What follows is th
 
 - **`/admin/staff` UI** for role management — currently manual via Prisma Studio.
 - **`POST /api/admin/orders/:code/mark-paid`** — manual override for cash-at-door edge cases.
-- **Real Google G glyph** on `OAuthButton` — currently a stylized monochrome placeholder.
-- **Delete `PosterPlaceholder.tsx`** — unused.
+- **Tighten Lempira formatting** — `formatTotalLPS` / `formatPriceLPS` in [`frontend/lib/seats.ts`](frontend/lib/seats.ts) still emit `$1000.00 LPS`. At whole-number prices the dollar sign + `.00` reads oddly; `L 1,000` would be cleaner.
+- **Pre-compress carousel JPEGs** — the 8 WhatsApp photos in `public/` are full-resolution phone shots. Next.js Image resizes on demand but pre-compressing keeps mobile LCP healthier on slow networks.
+- **Delete dead code** — `OAuthButton.tsx`, `PosterPlaceholder.tsx`, plus the now-unused `copy.signin.dividerLabel` and `copy.signin.googleCta` strings (and consider also pruning `maxNotice` plumbing in `SeatPickerApp` / `CartPanel` since the cap was effectively removed).
+- **Header user menu.** Sign-in indicator + logout button. `POST /api/auth/logout` is wired; just no UI surface yet.
+- **Soft per-order cap?** With no limit and L 1,000/seat, a misclick could put 50+ seats in the cart. A UI-only soft cap (e.g. 20 with a confirm) might be worth reintroducing.
 - **Re-run `/impeccable document`** to lock the design system (DESIGN.md is still `<!-- SEED -->`).
 
 ### Suggested order
