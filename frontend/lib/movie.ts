@@ -21,7 +21,7 @@ export type Movie = {
 
 const PLACEHOLDER: Movie = {
   status: "selling",
-  showtimeISO: "2026-06-24T19:00:00+02:00",
+  showtimeISO: "2026-06-24T19:00:00-06:00",
   title: "CUATRO",
   director: "JOSE JAVIER DIAZ",
   runtimeMin: 30,

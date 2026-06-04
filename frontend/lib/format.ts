@@ -1,44 +1,46 @@
 /**
  * Spanish-formatted strings derived from movie data.
  *
- * Showtimes carry their own offset (e.g. "+02:00"). We treat that offset
- * as the venue's local wall-clock and format without further timezone math:
- * rewrite the offset to "Z" and tell Intl to format in UTC.
+ * Showtimes are absolute instants (the backend serializes `startsAt` to UTC
+ * via `toISOString()`). We always render them in the venue's timezone —
+ * Honduras (America/Tegucigalpa, UTC-6, no DST) — so the wall-clock the
+ * customer sees matches the door.
  */
-function asWallClockDate(iso: string): Date {
-  return new Date(iso.replace(/(?:Z|[+\-]\d{2}:?\d{2})$/, "Z"));
-}
+const VENUE_TZ = "America/Tegucigalpa";
 
-/** "SÁBADO 27 DE JUNIO · 6:00 PM" */
+/** "MIÉRCOLES 24 DE JUNIO · 7:00 PM" */
 export function formatDateLine(iso: string): string {
-  const d = asWallClockDate(iso);
+  const d = new Date(iso);
   const datePart = new Intl.DateTimeFormat("es-ES", {
     weekday: "long",
     day: "numeric",
     month: "long",
-    timeZone: "UTC",
+    timeZone: VENUE_TZ,
   })
     .format(d)
     .replace(/,/g, "")
     .toUpperCase();
 
-  const h = d.getUTCHours();
-  const m = d.getUTCMinutes();
-  const meridiem = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  const timePart = `${h12}:${String(m).padStart(2, "0")} ${meridiem}`;
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: VENUE_TZ,
+  })
+    .format(d)
+    .toUpperCase();
 
   return `${datePart} · ${timePart}`;
 }
 
-/** "27.06.2026" — for the header spec line. */
+/** "24.06.2026" — for the header spec line. */
 export function formatSpecDate(iso: string): string {
-  const d = asWallClockDate(iso);
+  const d = new Date(iso);
   return new Intl.DateTimeFormat("es-ES", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: VENUE_TZ,
   })
     .format(d)
     .replace(/\//g, ".");

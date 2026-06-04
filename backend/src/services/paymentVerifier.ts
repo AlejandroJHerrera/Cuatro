@@ -7,6 +7,7 @@ export type VerifyInput = {
   expected: {
     amountLps: number;
     accountRef: string;
+    accountNumber: string;
     orderCode: string;
     holdCreatedAt: Date;
   };
@@ -24,6 +25,90 @@ export type VerifyVerdict =
   | { ok: true; txnId: string; senderName: string | null }
   | { ok: false; reason: RejectionReason; detail: string };
 
+export type ReceiptFields = {
+  isBankReceipt: boolean;
+  destAccountNumber: string | null;
+  destName: string | null;
+  senderName: string | null;
+  amount: number | null;
+  currency: string | null;
+  dateTimeIso: string | null;
+  reference: string | null;
+};
+
+const LEMPIRA_MARKERS = new Set(["HNL", "LPS", "L", "LEMPIRA", "LEMPIRAS"]);
+const STALE_MS = 24 * 60 * 60 * 1000;
+const FUTURE_SKEW_MS = 10 * 60 * 1000; // tolerate small bank/server clock skew
+
+const STATIC_DETAIL: Record<Exclude<RejectionReason, "amount-mismatch">, string> = {
+  "wrong-account": "La transferencia no fue a la cuenta correcta.",
+  "stale-receipt": "La fecha del comprobante está fuera del rango válido (últimas 24 horas).",
+  "missing-txn-id": "No encontramos un número de referencia en el comprobante.",
+  "not-a-receipt": "La imagen no parece un comprobante bancario.",
+  unreadable: "No pudimos leer el comprobante con claridad.",
+};
+
+function normalizeDigits(s: string | null): string {
+  return (s ?? "").replace(/\D/g, "");
+}
+
+function formatLps(amount: number): string {
+  return `L ${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * Pure verdict logic. The model only extracts ReceiptFields; this function
+ * applies the rules (account-number gate, exact amount, strict 24h window,
+ * non-empty reference) and is the primary unit-test surface.
+ * Assumes expected.accountNumber is digits-only (validated at the env layer).
+ * fields.destName is extracted for display/logging only and is not gated on.
+ */
+export function judgeReceipt(
+  fields: ReceiptFields,
+  expected: { accountNumber: string; amountLps: number },
+  now: Date,
+): VerifyVerdict {
+  if (!fields.isBankReceipt) {
+    return { ok: false, reason: "not-a-receipt", detail: STATIC_DETAIL["not-a-receipt"] };
+  }
+
+  if (normalizeDigits(fields.destAccountNumber) !== normalizeDigits(expected.accountNumber)) {
+    return { ok: false, reason: "wrong-account", detail: STATIC_DETAIL["wrong-account"] };
+  }
+
+  const currencyOk =
+    fields.currency != null && LEMPIRA_MARKERS.has(fields.currency.trim().toUpperCase());
+  if (fields.amount == null || !currencyOk) {
+    return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
+  }
+  // 0.005 = half a centavo; absorbs float noise from OCR-parsed amounts.
+  if (Math.abs(fields.amount - expected.amountLps) >= 0.005) {
+    return {
+      ok: false,
+      reason: "amount-mismatch",
+      detail: `El monto no coincide — esperábamos ${formatLps(expected.amountLps)}.`,
+    };
+  }
+
+  const when = fields.dateTimeIso ? new Date(fields.dateTimeIso) : null;
+  if (!when || Number.isNaN(when.getTime())) {
+    return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
+  }
+  const ageMs = now.getTime() - when.getTime();
+  if (ageMs > STALE_MS || ageMs < -FUTURE_SKEW_MS) {
+    return { ok: false, reason: "stale-receipt", detail: STATIC_DETAIL["stale-receipt"] };
+  }
+
+  if (!fields.reference || fields.reference.trim() === "") {
+    return { ok: false, reason: "missing-txn-id", detail: STATIC_DETAIL["missing-txn-id"] };
+  }
+
+  return { ok: true, txnId: fields.reference.trim(), senderName: fields.senderName };
+}
+
 export interface PaymentVerifier {
   verify(input: VerifyInput): Promise<VerifyVerdict>;
 }
@@ -36,58 +121,48 @@ export class FakeVerifier implements PaymentVerifier {
   }
 }
 
-const VERDICT_TOOL = {
-  name: "emit_verdict",
-  description: "Emit the structured verification verdict.",
+const EXTRACT_TOOL = {
+  name: "extract_receipt",
+  description: "Extrae los campos del comprobante de transferencia bancaria.",
   input_schema: {
     type: "object",
-    oneOf: [
-      {
-        type: "object",
-        properties: {
-          ok: { const: true },
-          txnId: { type: "string", minLength: 1 },
-          senderName: { type: ["string", "null"] },
-        },
-        required: ["ok", "txnId", "senderName"],
-        additionalProperties: false,
-      },
-      {
-        type: "object",
-        properties: {
-          ok: { const: false },
-          reason: {
-            type: "string",
-            enum: [
-              "amount-mismatch",
-              "wrong-account",
-              "stale-receipt",
-              "missing-txn-id",
-              "not-a-receipt",
-              "unreadable",
-            ],
-          },
-          detail: { type: "string", maxLength: 120 },
-        },
-        required: ["ok", "reason", "detail"],
-        additionalProperties: false,
-      },
+    properties: {
+      isBankReceipt: { type: "boolean" },
+      destAccountNumber: { type: ["string", "null"] },
+      destName: { type: ["string", "null"] },
+      senderName: { type: ["string", "null"] },
+      amount: { type: ["number", "null"] },
+      currency: { type: ["string", "null"] },
+      dateTimeIso: { type: ["string", "null"] },
+      reference: { type: ["string", "null"] },
+    },
+    required: [
+      "isBankReceipt",
+      "destAccountNumber",
+      "destName",
+      "senderName",
+      "amount",
+      "currency",
+      "dateTimeIso",
+      "reference",
     ],
+    additionalProperties: false,
   },
 } as const;
 
-const SYSTEM_PROMPT = `Eres un verificador de comprobantes de pago para una función única del cine CUATRO en Honduras.
-El cliente paga por transferencia bancaria. Recibes el comprobante (captura de pantalla) y los datos esperados.
-Debes aprobar SOLO si TODAS las verificaciones pasan:
-1. El monto en el comprobante es exactamente igual al monto esperado (en LPS / HNL).
-2. La cuenta destino del comprobante coincide con la cuenta esperada.
-3. La fecha del comprobante está dentro de las últimas 24 horas.
-4. El comprobante muestra un número de transacción/referencia no vacío.
-5. La imagen es claramente un comprobante bancario (no un meme, foto al azar, ni nota manuscrita).
+const SYSTEM_PROMPT = `Eres un extractor de datos de comprobantes de transferencia bancaria de Honduras (BAC, Ficohsa, Banpaís, Tigo Money, etc.). Recibes una captura de pantalla. Extrae los campos y devuélvelos SIEMPRE mediante la herramienta extract_receipt. No emitas ningún juicio de aprobación; solo extrae lo que ves.
 
-Si una verificación falla, devuelve el rechazo MÁS específico posible y un "detail" en español de máximo 120 caracteres dirigido al cliente (ej. "El monto no coincide — esperábamos L 48.00").
+Guía de campos:
+- isBankReceipt: true solo si la imagen es claramente un comprobante o notificación de transferencia bancaria/billetera. false para memes, fotos al azar o notas manuscritas.
+- destAccountNumber: el número de la CUENTA DESTINO (a la que se envió el dinero). Búscalo junto a "a la cuenta", "cuenta Nº", "cuenta destino", "Cta. Crédito", "Cuenta" o "a nombre de". Devuelve solo los dígitos.
+- destName: el nombre del titular de la cuenta destino ("a nombre de ...").
+- senderName: quién envió o realizó la transferencia, si aparece.
+- amount: el monto como número, sin símbolo ni separador de miles (ej. "L8,210.00" → 8210).
+- currency: el código o símbolo de moneda tal como aparece (ej. "L", "HNL", "LPS"). Si la moneda va pegada al número (ej. "L8,210.00"), extráela como "L".
+- dateTimeIso: combina la fecha y la hora del comprobante en formato ISO 8601 con offset de Honduras (-06:00). Ej. fecha "22 mayo 2026" + hora "11:12 AM" → "2026-05-22T11:12:00-06:00". Si falta la hora, usa T00:00:00-06:00. Si no hay fecha, null.
+- reference: el número de referencia o de transacción ("Referencia", "No. de transacción", "comprobante"), como string.
 
-Responde SIEMPRE mediante la herramienta emit_verdict.`;
+Tanto los comprobantes del lado de quien envía como las notificaciones del lado de quien recibe son válidos: en ambos casos la cuenta destino es la que aparece tras "a nombre de" / "a la cuenta".`;
 
 export class ClaudeVerifier implements PaymentVerifier {
   private client: Anthropic;
@@ -96,20 +171,12 @@ export class ClaudeVerifier implements PaymentVerifier {
   }
 
   async verify(input: VerifyInput): Promise<VerifyVerdict> {
-    const userText = [
-      `Datos esperados:`,
-      `- Monto: L ${input.expected.amountLps.toFixed(2)}`,
-      `- Cuenta destino: ${input.expected.accountRef}`,
-      `- Referencia esperada (mencionada en el voucher): ${input.expected.orderCode}`,
-      `- Reservación creada: ${input.expected.holdCreatedAt.toISOString()}`,
-    ].join("\n");
-
     const response = await this.client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 512,
       system: SYSTEM_PROMPT,
-      tools: [VERDICT_TOOL as any],
-      tool_choice: { type: "tool", name: "emit_verdict" } as any,
+      tools: [EXTRACT_TOOL as any],
+      tool_choice: { type: "tool", name: "extract_receipt" } as any,
       messages: [
         {
           role: "user",
@@ -122,20 +189,22 @@ export class ClaudeVerifier implements PaymentVerifier {
                 data: input.imageBuffer.toString("base64"),
               },
             },
-            { type: "text", text: userText },
+            { type: "text", text: "Extrae los campos de este comprobante." },
           ],
         },
       ],
     });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
-    if (
-      !toolUse ||
-      toolUse.type !== "tool_use" ||
-      toolUse.name !== "emit_verdict"
-    ) {
+    if (!toolUse || toolUse.type !== "tool_use" || toolUse.name !== "extract_receipt") {
       throw new Error("verifier-returned-no-tool-use");
     }
-    return toolUse.input as VerifyVerdict;
+
+    const fields = toolUse.input as ReceiptFields;
+    return judgeReceipt(
+      fields,
+      { accountNumber: input.expected.accountNumber, amountLps: input.expected.amountLps },
+      new Date(),
+    );
   }
 }
