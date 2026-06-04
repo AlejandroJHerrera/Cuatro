@@ -16,6 +16,7 @@ const schema = z.object({
   // Payment pivot
   QR_SIGNING_SECRET: z.string().regex(/^[0-9a-f]{64}$/, "must be 32-byte hex"),
   BANK_ACCOUNT_REF: z.string().min(1),
+  BANK_ACCOUNT_NUMBER: z.string().regex(/^\d+$/, "BANK_ACCOUNT_NUMBER must be all digits"),
   PAYMENT_ARCHIVE_EMAIL: z.string().email(),
   ANTHROPIC_API_KEY: z.string().min(1),
   RESEND_API_KEY: z.string().min(1),
