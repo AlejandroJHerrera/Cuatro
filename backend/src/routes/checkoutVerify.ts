@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
 import { requireAuth } from "../auth/routes.js";
@@ -9,6 +10,31 @@ import { finalizeOrderAsPaid, findOrCreatePendingOrder, incrementOrderAttempts }
 import { releaseUserHolds } from "../services/holds.js";
 import { type PaymentVerifier, type VerifyVerdict } from "../services/paymentVerifier.js";
 import { sendOrderConfirmation, sendOrderRejection, sendPaymentArchive } from "../services/email.js";
+
+const verifyLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Per authenticated user; IPv6-safe ipKeyGenerator for the (rare) unauthenticated fallback.
+  keyGenerator: (req) =>
+    (req.user as { id?: string } | undefined)?.id ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  skip: () => env.NODE_ENV === "test",
+  handler: (_req, res) => {
+    res.status(429).json({ status: "rate-limited", detail: "Demasiados intentos. Espera unos minutos." });
+  },
+});
+
+async function safeSend(label: string, send: () => Promise<unknown>): Promise<void> {
+  try {
+    const result = (await send()) as { error?: unknown } | undefined;
+    if (result && result.error) {
+      console.error(`[email] ${label} failed:`, result.error);
+    }
+  } catch (err) {
+    console.error(`[email] ${label} threw:`, err);
+  }
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -38,7 +64,7 @@ export function checkoutVerifyRouter(opts: { verifier: PaymentVerifier; mailer?:
   const router = Router();
   const mailer = opts.mailer ?? defaultMailer;
 
-  router.post("/verify", requireAuth, upload.single("screenshot"), async (req: Request, res: Response) => {
+  router.post("/verify", requireAuth, verifyLimiter, upload.single("screenshot"), async (req: Request, res: Response) => {
     if (!req.file) return res.status(400).json({ error: "screenshot required" });
     const user = req.user as { id: string; email: string; name: string | null };
 
@@ -132,10 +158,10 @@ async function applyVerdictAndRespond(args: {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.startsWith("duplicate-txn-id")) {
         await incrementOrderAttempts(args.order.id, "duplicate-receipt");
-        await args.mailer.archive({
+        await safeSend(`archive ${args.order.code}`, () => args.mailer.archive({
           props: archiveProps({ ...args, verdict: { ok: false, reason: "missing-txn-id", detail: "Comprobante reutilizado." } }),
           screenshot: { filename: args.screenshotCopy.filename, content: args.screenshotCopy.buffer, mimeType: args.screenshotCopy.mimeType },
-        });
+        }));
         const updated = await prisma.order.findUnique({ where: { id: args.order.id } });
         return args.res.status(422).json({
           status: "rejected",
@@ -148,10 +174,10 @@ async function applyVerdictAndRespond(args: {
     }
   }
   await incrementOrderAttempts(args.order.id, args.verdict.reason);
-  await args.mailer.archive({
+  await safeSend(`archive ${args.order.code}`, () => args.mailer.archive({
     props: archiveProps({ ...args, verdict: args.verdict }),
     screenshot: { filename: args.screenshotCopy.filename, content: args.screenshotCopy.buffer, mimeType: args.screenshotCopy.mimeType },
-  });
+  }));
   const updated = await prisma.order.findUnique({ where: { id: args.order.id } });
   return args.res.status(422).json({
     status: "rejected",
@@ -174,20 +200,21 @@ async function applyVerdictAsync(args: {
     await finalizeAndEmail({ ...args, txnId: args.verdict.txnId });
     return;
   }
-  await incrementOrderAttempts(args.order.id, args.verdict.reason);
-  await args.mailer.archive({
-    props: archiveProps({ ...args, verdict: args.verdict }),
+  const verdict = args.verdict;
+  await incrementOrderAttempts(args.order.id, verdict.reason);
+  await safeSend(`archive ${args.order.code}`, () => args.mailer.archive({
+    props: archiveProps({ ...args, verdict }),
     screenshot: { filename: args.screenshotCopy.filename, content: args.screenshotCopy.buffer, mimeType: args.screenshotCopy.mimeType },
-  });
-  await args.mailer.rejection({
+  }));
+  await safeSend(`rejection ${args.order.code}`, () => args.mailer.rejection({
     to: args.user.email,
     props: {
       guestName: args.user.name ?? "amigo",
       orderCode: args.order.code,
-      detail: args.verdict.detail,
+      detail: verdict.detail,
       retryUrl: `${env.FRONTEND_URL}/checkout?retry=${args.order.code}`,
     },
-  });
+  }));
 }
 
 async function finalizeAndEmail(args: {
@@ -214,7 +241,7 @@ async function finalizeAndEmail(args: {
     })),
   );
 
-  await args.mailer.confirmation({
+  await safeSend(`confirmation ${args.order.code}`, () => args.mailer.confirmation({
     to: args.user.email,
     props: {
       guestName: args.user.name ?? "amigo",
@@ -228,9 +255,9 @@ async function finalizeAndEmail(args: {
       })),
     },
     qrAttachments,
-  });
+  }));
 
-  await args.mailer.archive({
+  await safeSend(`archive ${args.order.code}`, () => args.mailer.archive({
     props: {
       orderCode: args.order.code,
       guestName: args.user.name ?? args.user.email,
@@ -240,7 +267,7 @@ async function finalizeAndEmail(args: {
       verdict: "approved",
       txnId: args.txnId,
     },
-  });
+  }));
 }
 
 function archiveProps(args: {

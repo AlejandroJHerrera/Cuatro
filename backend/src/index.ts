@@ -1,3 +1,5 @@
+import "./instrument.js";
+import * as Sentry from "@sentry/node";
 import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -21,6 +23,8 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 // In dev, Next picks the next free port (3000 → 3001), so accept both.
+// In production, only env.FRONTEND_URL is allowed — the localhost/LAN additions
+// and devLanOriginRe check are both explicitly gated on NODE_ENV === "development".
 const allowedOrigins =
   env.NODE_ENV === "development"
     ? [env.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"]
@@ -65,6 +69,7 @@ app.use((_req, res) => {
 });
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  Sentry.captureException(err);
   console.error(err);
   res.status(500).json({ error: "Internal server error." });
 };

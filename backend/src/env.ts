@@ -13,6 +13,8 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
+  SENTRY_DSN: z.string().url().optional(),
+
   // Payment pivot
   QR_SIGNING_SECRET: z.string().regex(/^[0-9a-f]{64}$/, "must be 32-byte hex"),
   BANK_ACCOUNT_REF: z.string().min(1),
