@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
 import { requireAuth } from "../auth/routes.js";
@@ -16,7 +16,9 @@ const verifyLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.user as { id?: string } | undefined)?.id ?? req.ip ?? "unknown",
+  // Per authenticated user; IPv6-safe ipKeyGenerator for the (rare) unauthenticated fallback.
+  keyGenerator: (req) =>
+    (req.user as { id?: string } | undefined)?.id ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
   skip: () => env.NODE_ENV === "test",
   handler: (_req, res) => {
     res.status(429).json({ status: "rate-limited", detail: "Demasiados intentos. Espera unos minutos." });
