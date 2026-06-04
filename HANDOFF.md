@@ -28,10 +28,10 @@ Project root: `/Users/alejandro/Desktop/Cuatro/`
 | Backend | Express 5 + TypeScript on `:4000` |
 | Database | PostgreSQL 16 via Prisma 5.22 — `docker compose up -d` on host port **5433** |
 | Auth | Email/password via Passport.js + Postgres-backed session cookie. Google OAuth strategy is still wired backend-side (conditional on `GOOGLE_CLIENT_ID/SECRET`) but **the UI button on `/signin` was removed 2026-06-03** — sign-up is now the default visible form. |
-| Payments | **Bank transfer + Claude Sonnet 4.6 verification.** Customer uploads a receipt screenshot to `POST /api/checkout/verify`; the route calls the Anthropic SDK (`@anthropic-ai/sdk`) with the image, validates via single-tool-use, converts holds → Tickets, and emits HMAC-SHA256-signed QR payloads. Screenshots are never persisted (multer `memoryStorage`). |
+| Payments | **Bank transfer + Claude Sonnet 4.6 verification (extract-then-judge).** Customer uploads a receipt screenshot to `POST /api/checkout/verify`; `ClaudeVerifier` calls the Anthropic SDK to **extract** fields (`extract_receipt` tool → `ReceiptFields`), then a pure, unit-tested `judgeReceipt()` renders the verdict: account-number gate (`BANK_ACCOUNT_NUMBER`), exact amount, **same-day** (Honduras) freshness, non-empty bank reference, and **the order code present in the transfer's Descripción**. On approve it converts holds → Tickets and emits HMAC-SHA256-signed QR payloads. Screenshots are never persisted (multer `memoryStorage`). |
 | Email | Resend + `@react-email/components`. Three templates: customer confirmation (with inline QR PNGs), internal payment archive, customer rejection. |
 | Door entry | Per-seat HMAC-signed QR codes, scanned by door staff via `/admin/scan` (jsqr camera viewfinder + floating verdict toast with smooth pop-in/out). Admins fall back to manual check-in on `/admin/door`. |
-| Testing | Vitest + supertest backend harness. 25 tests across 8 files. Truncating Postgres `cuatro_test` DB on `:5433`. |
+| Testing | Vitest + supertest backend harness. 40 tests across 8 files. Truncating Postgres `cuatro_test` DB on `:5433`. |
 
 Max seats per order: **121** (raised from 8 on 2026-06-03 — effectively the venue capacity, no per-order cap). Price: **L 1,000** per seat (raised from L 12 on 2026-06-03). Constants in [`frontend/lib/seats.ts`](frontend/lib/seats.ts): `PRICE_PER_SEAT_LPS`, `MAX_SEATS_PER_ORDER`, `formatTotalLPS`, `formatPriceLPS`. Backend mirrors via `MAX_SEATS_PER_HOLD` in [`services/holds.ts`](backend/src/services/holds.ts) and `Movie.priceLps` (seeded value).
 
@@ -285,6 +285,7 @@ cp .env.example .env
 # Edit backend/.env and set:
 #   QR_SIGNING_SECRET=<openssl rand -hex 32>
 #   BANK_ACCOUNT_REF=Banco Atlántida · Cuenta 0000000000 · Cuatro Films
+#   BANK_ACCOUNT_NUMBER=0000000000   # digits only — the verifier's account gate
 #   PAYMENT_ARCHIVE_EMAIL=pagos@cuatro.example
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   RESEND_API_KEY=re_...
@@ -403,6 +404,19 @@ The payment-pivot plan is **fully implemented** (19/19 tasks landed). The 2026-0
 - **Production domain registered: `discocuatro.com`** on Cloudflare. Resend domain verified (SPF + DKIM), DMARC TXT set at `p=none`. `FROM` swapped in [`backend/src/services/email.ts:18`](backend/src/services/email.ts:18) → `Cuatro <no-reply@discocuatro.com>`.
 - **Real bank account wired**: `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` set identically in `backend/.env` (`BANK_ACCOUNT_REF`) and `frontend/.env.local` (`NEXT_PUBLIC_BANK_ACCOUNT_REF`). Claude verifier will cross-check the screenshot against this string.
 
+### 2026-06-04 session — verifier rework + real-receipt validation
+
+Reworked the payment verifier to **extract-then-judge** and validated it end-to-end against real BAC receipts. Spec/plan in [`docs/superpowers/specs/2026-06-03-payment-verifier-extraction-design.md`](docs/superpowers/specs/2026-06-03-payment-verifier-extraction-design.md) + [`docs/superpowers/plans/2026-06-03-payment-verifier-extraction.md`](docs/superpowers/plans/2026-06-03-payment-verifier-extraction.md).
+
+- **Extract-then-judge.** `ClaudeVerifier` now only **extracts** fields via the `extract_receipt` tool → `ReceiptFields`; a pure, unit-tested `judgeReceipt(fields, expected, now)` renders the verdict. The safety-critical comparisons are deterministic TypeScript, not the model. **FakeVerifier is off** — [`index.ts`](backend/src/index.ts) uses `new ClaudeVerifier()` with a real `ANTHROPIC_API_KEY`.
+- **New env var `BANK_ACCOUNT_NUMBER=100355841`** (digits-only, Zod-validated) — the account-number gate. `BANK_ACCOUNT_REF` stays as the human-readable display string. Added to `.env`, `.env.example`, `.env.test`.
+- **Verdict rules:** account number must equal `BANK_ACCOUNT_NUMBER`; amount must equal the order total (to the cent); **same-day** freshness (the receipt's Honduras calendar date must be today); non-empty bank reference (stored as `txnId` for dedup); and **the order code must appear in the transfer's Descripción** (normalized contains — case/space/punctuation-insensitive). New rejection reason `reference-mismatch`.
+- **Year anchor.** Real BAC "Resultado de transferencia" shows a date with **no year** (e.g. "03 junio"); the model was guessing 2025. The prompt now injects today's Honduras date (`honduranDateString`) so omitted years resolve correctly.
+- **⚠️ NEW customer-facing requirement:** customers **must write the order code (REFERENCIA) in the transfer's Descripción/Detalle**, and pay **the same day**. Checkout now surfaces this — [`PaymentInstructionsCard.tsx`](frontend/app/components/PaymentInstructionsCard.tsx) shows a prominent gold callout at the top, and the copy buttons were rewritten to work on mobile + desktop (Clipboard API + `execCommand` fallback + `COPIADO ✓` feedback).
+- **Validation.** Debugged two failing real BAC screenshots (root causes: wrong-year guess → false stale; no order code in Descripción). Then validated the full **approve → ticket → QR → email → /admin/scan → /admin/door** path through the **real Claude verifier** using a mock BAC receipt (HTML→PNG via macOS `qlmanage`) carrying today's date + the order code. 40 backend tests pass.
+- **⚠️ Shell gotcha:** this machine's shell exports an **empty `ANTHROPIC_API_KEY`** that shadows `.env` (dotenv won't override it). Start the backend with `unset ANTHROPIC_API_KEY && npm run dev` or env validation fails as if the key were missing.
+- **Dev DB has leftover test orders** — `63C4WK` (seat A5, josecachin20), `NBMPBZ` (seat A6, mjdiazchin) are *paid* and holding seats; `YVUT5U`/`EMCD5U` are pending. Clear these (e.g. `prisma migrate reset --force && npm run db:seed`, then re-promote admin/doorStaff) before launch so the seat map is clean.
+
 No further coding is required to make the v1 flow functional. What follows is the production-ready punch list.
 
 ## Production roadmap
@@ -412,18 +426,18 @@ No further coding is required to make the v1 flow functional. What follows is th
 1. **Rotate leaked credentials** — the Resend API key and the ngrok authtoken were both pasted in a chat transcript and should be considered compromised. Revoke + regenerate in their respective dashboards.
 2. ✅ **Verify a real sending domain on Resend.** *(Done 2026-06-03.)* `discocuatro.com` registered on Cloudflare; SPF + DKIM verified on Resend; DMARC TXT live at `p=none`. `FROM` is `Cuatro <no-reply@discocuatro.com>` in [`email.ts:18`](backend/src/services/email.ts:18). **Still TODO**: actual deliverability test (send the confirmation to a Gmail address that isn't the Resend account owner, check inbox + spam, optionally score via mail-tester.com).
 3. ✅ **Real bank account details.** *(Done 2026-06-03.)* `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` set identically in `backend/.env` (`BANK_ACCOUNT_REF`) and `frontend/.env.local` (`NEXT_PUBLIC_BANK_ACCOUNT_REF`).
-4. **Switch off FakeVerifier.** [`backend/src/index.ts`](backend/src/index.ts) currently uses `new FakeVerifier({ ok: true, txnId: "TXN-DEV-1", senderName: "Prueba" })` (every screenshot auto-approves). Restore `new ClaudeVerifier()` and set a real `ANTHROPIC_API_KEY` in `backend/.env`. Tune `SYSTEM_PROMPT` in [`paymentVerifier.ts`](backend/src/services/paymentVerifier.ts) for BAC Honduras receipt formatting before opening sales.
-5. **Apply the new date + price to the DB.** Editing constants only updated the frontend reads; the backend `Movie` row still has the old values until you re-seed. Run `cd backend && npx prisma migrate reset --force && npm run db:seed`, OR edit `Movie.startsAt` (`2026-06-24T19:00:00-06:00`) and `Movie.priceLps` (`1000`) directly in Prisma Studio.
-6. **Promote at least one admin account.** Sign up via the UI → Prisma Studio → set `User.role = admin` (and `doorStaff` for additional staff).
-7. **Confirm venue + showtime are final.** The 24 Jun 7 PM datetime is what's coded; venue name still says CINEPOLIS ALTARA — update `Movie.venueName` / `Movie.venueAddress` if those have shifted.
-8. **Real end-to-end smoke test with the real verifier.** Pick seats → upload a real BAC / Tigo Money screenshot → verify approval → check email lands in Gmail (not spam) → scan QR from another phone via `/admin/scan` → confirm door manifest at `/admin/door` reflects the redemption. Document any LLM false-positives/negatives and iterate on `SYSTEM_PROMPT`.
+4. ✅ **Switch off FakeVerifier.** *(Done 2026-06-04.)* [`index.ts`](backend/src/index.ts) uses `new ClaudeVerifier()`, reworked to extract-then-judge (see 2026-06-04 session). Real `ANTHROPIC_API_KEY` set in `backend/.env`. **Start the backend with `unset ANTHROPIC_API_KEY` first** — the shell exports an empty key that shadows `.env`.
+5. ✅ **Apply the new date + price to the DB.** *(Done.)* `Movie.startsAt` = `2026-06-24T19:00:00-06:00` and `Movie.priceLps` = `1000` confirmed in the dev DB. (Re-seed the prod DB at deploy.)
+6. ✅ **Promote at least one admin account.** *(Done.)* `alejandro21232@gmail.com` = `admin`, `alexistabora@hotmail.com` = `doorStaff` in the dev DB. Re-promote after any prod re-seed.
+7. ✅ **Confirm venue + showtime are final.** *(Done.)* CINEPOLIS ALTARA · SAN PEDRO SULA, 24 Jun 2026 7:00 PM confirmed.
+8. ◑ **Real end-to-end smoke test.** *(Mostly done 2026-06-04.)* Validated approve → ticket → QR → confirmation email → `/admin/scan` → `/admin/door` through the **real Claude verifier** (via a mock BAC receipt carrying today's date + order code). **Still TODO before launch:** one run with a genuinely fresh real transfer, and a Tigo Money receipt if you'll accept those. Note the two new customer rules: the REFERENCIA must be in the transfer's Descripción, and payment must be **same-day**.
 
 ### Tier 2 — Hosting + deployment
 
 7. **Pick a backend host.** Railway, Render, or Fly.io are the obvious candidates — managed Postgres + Node in one place with automatic HTTPS. Provision a managed Postgres, set `DATABASE_URL`, run `npx prisma migrate deploy` on first boot, then `npm run db:seed` once to insert the movie + 121 seats.
 8. **Pick a frontend host.** Vercel is the natural Next.js choice — GitHub-connected, automatic HTTPS, edge caching. Free tier handles a single-show scale comfortably.
 9. **Set production env vars** on both hosts:
-   - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://discocuatro.com`, `BACKEND_URL=https://api.discocuatro.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
+   - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `BANK_ACCOUNT_NUMBER` (digits-only, the verifier's account gate), `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://discocuatro.com`, `BACKEND_URL=https://api.discocuatro.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
    - Frontend: `API_URL=https://api.discocuatro.com` (server-side fetches). Leave `NEXT_PUBLIC_BACKEND_URL=` blank to keep the same-origin pattern via the rewrite, OR set it to the backend URL if you've decided to call directly.
 10. **Decide: keep the Next rewrite proxy in production, or call the backend directly?**
     - **Keep rewrite** = single origin, no CORS in prod, slightly more latency. Recommended for v1.
