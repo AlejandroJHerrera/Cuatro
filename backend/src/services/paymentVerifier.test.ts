@@ -103,3 +103,16 @@ test("judgeReceipt normalizes account numbers with spaces/dashes", () => {
   const v = judgeReceipt({ ...approvable(), destAccountNumber: "1003-5584 1" }, order, now);
   expect(v.ok).toBe(true);
 });
+
+test("judgeReceipt rejects a receipt dated 15 minutes in the future", () => {
+  const fifteenMinEarlier = new Date("2026-05-22T10:57:00-06:00"); // receipt is 11:12
+  const v = judgeReceipt(approvable(), order, fifteenMinEarlier);
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.reason).toBe("stale-receipt");
+});
+
+test("judgeReceipt accepts a receipt within the future clock-skew window (9 min)", () => {
+  const nineMinEarlier = new Date("2026-05-22T11:03:00-06:00"); // receipt is 11:12
+  const v = judgeReceipt(approvable(), order, nineMinEarlier);
+  expect(v.ok).toBe(true);
+});

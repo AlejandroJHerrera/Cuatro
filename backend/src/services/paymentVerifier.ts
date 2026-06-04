@@ -35,7 +35,7 @@ export type ReceiptFields = {
   reference: string | null;
 };
 
-const LEMPIRA_MARKERS = new Set(["HNL", "LPS", "L", "LEMPIRAS"]);
+const LEMPIRA_MARKERS = new Set(["HNL", "LPS", "L", "LEMPIRA", "LEMPIRAS"]);
 const STALE_MS = 24 * 60 * 60 * 1000;
 const FUTURE_SKEW_MS = 10 * 60 * 1000; // tolerate small bank/server clock skew
 
@@ -62,6 +62,8 @@ function formatLps(amount: number): string {
  * Pure verdict logic. The model only extracts ReceiptFields; this function
  * applies the rules (account-number gate, exact amount, strict 24h window,
  * non-empty reference) and is the primary unit-test surface.
+ * Assumes expected.accountNumber is digits-only (validated at the env layer).
+ * fields.destName is extracted for display/logging only and is not gated on.
  */
 export function judgeReceipt(
   fields: ReceiptFields,
@@ -81,6 +83,7 @@ export function judgeReceipt(
   if (fields.amount == null || !currencyOk) {
     return { ok: false, reason: "unreadable", detail: STATIC_DETAIL.unreadable };
   }
+  // 0.005 = half a centavo; absorbs float noise from OCR-parsed amounts.
   if (Math.abs(fields.amount - expected.amountLps) >= 0.005) {
     return {
       ok: false,
