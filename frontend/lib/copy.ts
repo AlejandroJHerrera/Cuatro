@@ -70,7 +70,7 @@ export const copy = {
     },
     cart: {
       emptyHeading: "Elige tus butacas.",
-      emptyBody: "Tienes 10 minutos cuando empieces.",
+      emptyBody: "Tienes 20 minutos cuando empieces.",
       timerPrefix: "TIEMPO RESTANTE",
       maxNotice: "Máximo 8 butacas por compra.",
       expiredNotice: "Tu reserva ha caducado. Estamos liberando las butacas…",

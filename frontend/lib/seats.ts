@@ -62,7 +62,7 @@ export const ROW_LAYOUTS: readonly RowLayout[] = [
 export const ROWS = ROW_LAYOUTS.map((r) => r.row);
 export const MAX_SEATS_PER_ORDER = 121;
 export const PRICE_PER_SEAT_LPS = 1000;
-export const HOLD_DURATION_MS = 10 * 60 * 1000;
+export const HOLD_DURATION_MS = 20 * 60 * 1000;
 
 export function seatKey(row: string, num: number): string {
   return `${row}${num}`;
