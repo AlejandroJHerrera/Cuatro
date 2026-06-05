@@ -7,7 +7,7 @@ import {
   seatLabel,
 } from "@/lib/seats";
 import { copy } from "@/lib/copy";
-import { releaseHolds, replaceHolds } from "@/lib/holds";
+import { fetchSeatsClient, releaseHolds, replaceHolds } from "@/lib/holds";
 import { SeatGrid } from "./SeatGrid";
 import { CartPanel } from "./CartPanel";
 import { SeatLegend } from "./SeatLegend";
@@ -18,6 +18,7 @@ type Props = {
 };
 
 const SYNC_DEBOUNCE_MS = 350;
+const POLL_INTERVAL_MS = 5000;
 
 /**
  * Owns selection state, drives the server-side hold via POST /api/holds, and
@@ -42,6 +43,11 @@ export function SeatPickerApp({ initialSeats, initialHolds }: Props) {
   const conflictTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncSeqRef = useRef(0); // last-write-wins guard against stale responses
+  const pollSeqRef = useRef(0); // last-write-wins guard for poll responses
+  const selectedRef = useRef(selected); // latest selection for the poll callback
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const seatsById = useMemo(() => {
     const map = new Map<string, Seat>();
@@ -142,6 +148,81 @@ export function SeatPickerApp({ initialSeats, initialHolds }: Props) {
     },
     [showConflictNotice],
   );
+
+  // Merge a fresh /api/seats snapshot into the grid. The user's own held seats
+  // read back as "held" (the DTO can't tell whose hold it is), so we flip the
+  // ones in our current selection back to "available" — exactly like the SSR
+  // path in app/seats/page.tsx. Any selected seat that is now "taken" was paid
+  // for by someone else after our hold lapsed: drop it, re-sync, and notify.
+  const reconcileSeats = useCallback(
+    (fresh: Seat[]) => {
+      const sel = selectedRef.current;
+      const freshById = new Map(fresh.map((s) => [s.id, s]));
+
+      setSeats(
+        fresh.map((s) =>
+          sel.has(s.id) && s.status !== "taken"
+            ? { ...s, status: "available" }
+            : s,
+        ),
+      );
+
+      const lost = [...sel].filter(
+        (id) => freshById.get(id)?.status === "taken",
+      );
+      if (lost.length === 0) return;
+
+      const lostSet = new Set(lost);
+      const trimmed = new Set([...sel].filter((id) => !lostSet.has(id)));
+      setSelected(trimmed);
+      void syncHolds(trimmed);
+
+      const labels = lost
+        .map((id) => {
+          const s = freshById.get(id);
+          return s ? seatLabel(s.row, s.num) : id;
+        })
+        .join(", ");
+      showConflictNotice(copy.seats.cart.lostSeatNotice(labels));
+    },
+    [syncHolds, showConflictNotice],
+  );
+
+  // Live seat map: poll /api/seats every 5s while the tab is visible. Pause
+  // when hidden; refetch immediately on return. Stale responses are dropped.
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      const seq = ++pollSeqRef.current;
+      const fresh = await fetchSeatsClient();
+      if (!fresh || seq !== pollSeqRef.current) return;
+      reconcileSeats(fresh);
+    };
+
+    const start = () => {
+      if (interval) return;
+      void poll();
+      interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [reconcileSeats]);
 
   const toggleSeat = useCallback(
     (seat: Seat) => {
