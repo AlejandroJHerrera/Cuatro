@@ -36,11 +36,11 @@ export function ProgrammerNote() {
         </p>
         <p
           className="
-            m-0 font-display italic
-            text-bulb text-lg sm:text-xl
-            leading-snug
+            m-0 mt-2 text-center font-display italic
+            text-gold text-3xl sm:text-4xl
+            leading-tight
           "
-          style={{ letterSpacing: "0.04em" }}
+          style={{ letterSpacing: "0.02em" }}
         >
           {copy.note.benefit}
         </p>
