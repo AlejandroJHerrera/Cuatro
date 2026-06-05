@@ -15,6 +15,11 @@ const schema = z.object({
 
   SENTRY_DSN: z.string().url().optional(),
 
+  // Real monitored inbox for customer replies. Optional: when set, customer
+  // emails carry a Reply-To, which improves trust/deliverability vs a bare
+  // no-reply From. Replies to no-reply@discocuatro.com are not received.
+  REPLY_TO_EMAIL: z.string().email().optional(),
+
   // Payment pivot
   QR_SIGNING_SECRET: z.string().regex(/^[0-9a-f]{64}$/, "must be 32-byte hex"),
   BANK_ACCOUNT_REF: z.string().min(1),

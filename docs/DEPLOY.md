@@ -21,6 +21,7 @@ Set these on the backend host (Railway / Render / Fly → Environment tab).
 | `BANK_ACCOUNT_REF` | `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` | Human-readable display string shown at checkout and in payment instructions. |
 | `BANK_ACCOUNT_NUMBER` | `100355841` | Digits only. The verifier uses this as its account gate — must match the account in `BANK_ACCOUNT_REF`. |
 | `PAYMENT_ARCHIVE_EMAIL` | `pagos@discocuatro.com` | Internal inbox for payment archive emails. |
+| `REPLY_TO_EMAIL` | `tuinbox@gmail.com` | Optional. A real monitored inbox set as `Reply-To` on customer emails. Improves trust/deliverability vs a bare `no-reply` From. Leave blank to omit. |
 | `FRONTEND_URL` | `https://discocuatro.com` | Also the sole allowed CORS origin in prod. |
 | `BACKEND_URL` | `https://api.discocuatro.com` | Public backend URL used in QR-image links embedded in emails. |
 | `NODE_ENV` | `production` | Enables secure cookies and locks CORS to `FRONTEND_URL`. |
