@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 5000;
 /**
  * Owns selection state, drives the server-side hold via POST /api/holds, and
  * surfaces conflicts when another buyer beats us to a seat. Expiry comes from
- * the server response (10-minute TTL); we tick locally and re-sync on each
+ * the server response (20-minute TTL); we tick locally and re-sync on each
  * selection change.
  */
 export function SeatPickerApp({ initialSeats, initialHolds }: Props) {
@@ -177,12 +177,10 @@ export function SeatPickerApp({ initialSeats, initialHolds }: Props) {
       setSelected(trimmed);
       void syncHolds(trimmed);
 
-      const labels = lost
-        .map((id) => {
-          const s = freshById.get(id);
-          return s ? seatLabel(s.row, s.num) : id;
-        })
-        .join(", ");
+      const labels = lost.map((id) => {
+        const s = freshById.get(id);
+        return s ? seatLabel(s.row, s.num) : id;
+      });
       showConflictNotice(copy.seats.cart.lostSeatNotice(labels));
     },
     [syncHolds, showConflictNotice],

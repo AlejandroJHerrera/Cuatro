@@ -5,8 +5,8 @@
  * with the main block, row I is the widest with a center aisle. Every seat
  * carries its master-grid column so the renderer can place rows independently.
  *
- * Backend wiring lands later (PLAN.md phase 2): GET ${API_URL}/api/seats.
- * Until then, getSeats() returns a deterministic placeholder.
+ * getSeats() fetches GET ${API_URL}/api/seats; the live picker also polls it
+ * client-side via fetchSeatsClient() in lib/holds.ts.
  */
 
 export type SeatStatus = "available" | "held" | "taken";
