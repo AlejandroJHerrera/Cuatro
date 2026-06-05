@@ -1,5 +1,5 @@
 /**
- * Seat-hold operations. Hold lifetime is 10 minutes; the lazy purge in
+ * Seat-hold operations. Hold lifetime is 20 minutes; the lazy purge in
  * services/seatStatus.ts keeps stale rows out of /api/seats reads.
  *
  * `replaceUserHolds` is the only mutation the frontend calls during selection:
@@ -10,7 +10,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 
-export const HOLD_DURATION_MS = 10 * 60 * 1000;
+export const HOLD_DURATION_MS = 20 * 60 * 1000;
 export const MAX_SEATS_PER_HOLD = 121;
 
 export type HoldResult =
