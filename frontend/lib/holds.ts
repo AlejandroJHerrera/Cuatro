@@ -4,6 +4,7 @@
  * calls these to mutate.
  */
 import { BACKEND_URL } from "./api";
+import type { Seat } from "./seats";
 
 export type HoldState = { seatIds: string[]; expiresAt: number };
 
@@ -65,5 +66,25 @@ export async function releaseHolds(): Promise<void> {
     });
   } catch {
     // best-effort cleanup
+  }
+}
+
+/**
+ * Browser-side poll of GET /api/seats for the live map. Returns the seat list
+ * on success, or null on any network/parse error (caller keeps its last good
+ * map and retries on the next tick). The /api/seats route returns the array
+ * directly, matching the Seat shape.
+ */
+export async function fetchSeatsClient(): Promise<Seat[] | null> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/seats`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    if (!Array.isArray(body)) return null;
+    return body as Seat[];
+  } catch {
+    return null;
   }
 }

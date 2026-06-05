@@ -70,11 +70,15 @@ export const copy = {
     },
     cart: {
       emptyHeading: "Elige tus butacas.",
-      emptyBody: "Tienes 10 minutos cuando empieces.",
+      emptyBody: "Tienes 20 minutos cuando empieces.",
       timerPrefix: "TIEMPO RESTANTE",
       maxNotice: "Máximo 8 butacas por compra.",
       expiredNotice: "Tu reserva ha caducado. Estamos liberando las butacas…",
       conflictNotice: "Alguien tomó esa butaca antes que tú. La quitamos de tu selección.",
+      lostSeatNotice: (labels: string[]) =>
+        labels.length === 1
+          ? `La butaca ${labels[0]} ya no está disponible — selecciónala de nuevo.`
+          : `Las butacas ${labels.join(", ")} ya no están disponibles — selecciónalas de nuevo.`,
       continue: "CONTINUAR",
       removeAria: (label: string) => `Quitar butaca ${label} de tu reserva.`,
       countSingular: (n: number) => `${n} BUTACA`,
