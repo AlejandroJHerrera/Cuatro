@@ -417,25 +417,55 @@ Reworked the payment verifier to **extract-then-judge** and validated it end-to-
 - **⚠️ Shell gotcha:** this machine's shell exports an **empty `ANTHROPIC_API_KEY`** that shadows `.env` (dotenv won't override it). Start the backend with `unset ANTHROPIC_API_KEY && npm run dev` or env validation fails as if the key were missing.
 - **Dev DB has leftover test orders** — `63C4WK` (seat A5, josecachin20), `NBMPBZ` (seat A6, mjdiazchin) are *paid* and holding seats; `YVUT5U`/`EMCD5U` are pending. Clear these (e.g. `prisma migrate reset --force && npm run db:seed`, then re-promote admin/doorStaff) before launch so the seat map is clean.
 
-No further coding is required to make the v1 flow functional. What follows is the production-ready punch list.
+### 2026-06-04 session (deployment) — PRODUCTION LAUNCH + post-launch changes
+
+**The app is LIVE in production.**
+
+- **Frontend:** Vercel → **https://discocuatro.com** (custom domain on Cloudflare, HTTPS, valid cert). Root dir `frontend`. Env: `API_URL=https://cuatro-production.up.railway.app`, `NEXT_PUBLIC_BANK_ACCOUNT_REF=...`, `NEXT_PUBLIC_BACKEND_URL` left **blank** (same-origin rewrite preserved). **Vercel Deployment Protection (Vercel Authentication) was disabled** so the public can reach the site (preview/git-branch URLs are still auth-walled).
+- **Backend:** Railway → **https://cuatro-production.up.railway.app**. Root dir `backend`. App binds Railway-injected `PORT=8080`; the public domain's **target port must be 8080** (a mismatched target port → Railway "train has not arrived" 404 even though the app is healthy and Active). Added **`postinstall: prisma generate`** to `backend/package.json` so Railway's clean install generates the Prisma client before the `tsc` build.
+- **Database:** Railway managed Postgres. `DATABASE_URL` is set to the **public proxy URL** (`...proxy.rlwy.net:PORT`) — the internal `${{Postgres.DATABASE_URL}}` reference did **not** connect on first setup (`/health` returned `ok:false`); the public proxy works. Migrations (`prisma migrate deploy`) + seed run **once from the laptop** against the public URL. The `session` table auto-creates on first request. Internal private networking is a deferred optimization.
+- **Railway env vars:** `NODE_ENV=production`, `SESSION_SECRET` (fresh), `QR_SIGNING_SECRET` (**kept the dev value** so migrated QRs stay valid), `ANTHROPIC_API_KEY` + `RESEND_API_KEY` (**rotated** — old ones were leaked), `BANK_ACCOUNT_REF`/`BANK_ACCOUNT_NUMBER`, `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://discocuatro.com`, `BACKEND_URL=https://cuatro-production.up.railway.app`. **`REPLY_TO_EMAIL` intentionally NOT set** (owner opted out).
+- **Next.js security bump:** `15.1.6 → 15.5.19` (CVE-2025-29927) + `postcss` bump — Vercel **blocks** deploys on the vulnerable Next version.
+
+**Real orders migrated to prod.** ⚠️ The two paid orders from the local dev DB — `63C4WK` (Jose Carlos Chinchilla, seat **A5**) and `NBMPBZ` (Maria Diaz, seat **A6**) — are **REAL customer purchases, not test data** (the earlier handoff wrongly called them leftover test orders). Migrated to prod (users + orders + tickets + receipts), remapping seat IDs by **label** since seed cuids differ per DB. QR payloads stay valid because prod uses the same `QR_SIGNING_SECRET`. Verified A5/A6 read `taken` on prod and all QR signatures validate. The customers can log in on `discocuatro.com` (password hashes migrated) and use the resend-email button to get a fresh email with correct prod QR links.
+
+**Prod smoke test PASSED.** Full real-money flow through the **live Claude verifier**: order `V9FRW5` (seat **A7**), real BAC transfer with the order code in *Detalle*, **approved on attempt 0**, ticket + QR + receipt created, confirmation email delivered, QR signature validates. `V9FRW5`/A7 is a kept test order (owner's own transfer). `alejandro21232@gmail.com` promoted to `admin` in prod.
+
+**Email deliverability fix** ([`email.ts`](backend/src/services/email.ts)): all three emails now render a **text/plain alternative** alongside the HTML (HTML-only is a spam signal). Added optional **`REPLY_TO_EMAIL`** env (unset → no Reply-To header). DNS auth is correctly configured (DKIM `resend._domainkey` signs `d=discocuatro.com` → DMARC passes via DKIM; SPF on `send.discocuatro.com`). Spam placement is **new-domain reputation, not broken auth** — being mitigated by asking affected customers to mark "Not spam."
+
+**UI:** programmer-note benefit line restyled to a **gold centered banner** above the carousel; text changed to **"A beneficio de el comedor público la casa de José"** ([`copy.ts`](frontend/lib/copy.ts) `note.benefit`, [`ProgrammerNote.tsx`](frontend/app/components/ProgrammerNote.tsx)).
+
+**Feature shipped — longer holds + live seat map** (merged to `main`, deployed). Spec/plan: [`docs/superpowers/specs/2026-06-04-longer-holds-live-seat-map-design.md`](docs/superpowers/specs/2026-06-04-longer-holds-live-seat-map-design.md) + [`docs/superpowers/plans/2026-06-04-longer-holds-live-seat-map.md`](docs/superpowers/plans/2026-06-04-longer-holds-live-seat-map.md).
+- **Hold lifetime 10 → 20 min** — `HOLD_DURATION_MS` in [`backend/src/services/holds.ts`](backend/src/services/holds.ts) (authoritative) + [`frontend/lib/seats.ts`](frontend/lib/seats.ts) mirror + "20 minutos" copy. Shrinks the window where a hold expires mid bank-transfer.
+- **Live seat map** — `/seats` polls `GET /api/seats` every **5s** while the tab is visible (pauses when hidden via `visibilitychange`, immediate refetch on return). Merges fresh statuses, preserves the user's own selection (own held seats flip back to `available`, mirroring the SSR path), and **drops a selected seat that becomes `taken`** with a notice. New: `fetchSeatsClient()` in [`lib/holds.ts`](frontend/lib/holds.ts), `copy.seats.cart.lostSeatNotice(labels: string[])`, polling + `reconcileSeats` in [`SeatPickerApp.tsx`](frontend/app/components/SeatPickerApp.tsx). **No schema/migration — purely behavioral.** DB load is negligible (~48 queries/s worst case for the entire 121-seat house; the read path's lazy expired-hold purge still runs per request).
+
+**Known residual / deferred (not blockers):**
+- **Paid-but-lost-seat race** still possible in the narrow window where a hold expires mid-transfer AND another buyer takes the seat → **manual refund** is the accepted fallback (spec options C/D/E — persist intended seats on the Order + graceful recovery — deferred).
+- Backend↔Postgres over the **public proxy** (internal networking optimization deferred).
+- **`REPLY_TO_EMAIL` unset** (owner's choice).
+- **Tier 3 ops still TODO:** Railway nightly DB backups (now important — real orders exist), UptimeRobot on `/health`, Sentry DSNs, DMARC `p=none → quarantine`.
+
+The v1 flow is live and a real purchase has completed end-to-end in production. What follows is the remaining punch list.
 
 ## Production roadmap
 
 ### Tier 1 — Blockers before any real customer can buy a ticket
 
-1. **Rotate leaked credentials** — the Resend API key and the ngrok authtoken were both pasted in a chat transcript and should be considered compromised. Revoke + regenerate in their respective dashboards.
+1. ✅ **Rotate leaked credentials.** *(Done 2026-06-04.)* `ANTHROPIC_API_KEY` and `RESEND_API_KEY` rotated; the new keys are set on Railway (prod). Old keys should be deleted in their dashboards if not already.
 2. ✅ **Verify a real sending domain on Resend.** *(Done 2026-06-03.)* `discocuatro.com` registered on Cloudflare; SPF + DKIM verified on Resend; DMARC TXT live at `p=none`. `FROM` is `Cuatro <no-reply@discocuatro.com>` in [`email.ts:18`](backend/src/services/email.ts:18). **Still TODO**: actual deliverability test (send the confirmation to a Gmail address that isn't the Resend account owner, check inbox + spam, optionally score via mail-tester.com).
 3. ✅ **Real bank account details.** *(Done 2026-06-03.)* `BAC · Cuenta 100355841 · José Javier Díaz Alvarado` set identically in `backend/.env` (`BANK_ACCOUNT_REF`) and `frontend/.env.local` (`NEXT_PUBLIC_BANK_ACCOUNT_REF`).
 4. ✅ **Switch off FakeVerifier.** *(Done 2026-06-04.)* [`index.ts`](backend/src/index.ts) uses `new ClaudeVerifier()`, reworked to extract-then-judge (see 2026-06-04 session). Real `ANTHROPIC_API_KEY` set in `backend/.env`. **Start the backend with `unset ANTHROPIC_API_KEY` first** — the shell exports an empty key that shadows `.env`.
 5. ✅ **Apply the new date + price to the DB.** *(Done.)* `Movie.startsAt` = `2026-06-24T19:00:00-06:00` and `Movie.priceLps` = `1000` confirmed in the dev DB. (Re-seed the prod DB at deploy.)
 6. ✅ **Promote at least one admin account.** *(Done.)* `alejandro21232@gmail.com` = `admin`, `alexistabora@hotmail.com` = `doorStaff` in the dev DB. Re-promote after any prod re-seed.
 7. ✅ **Confirm venue + showtime are final.** *(Done.)* CINEPOLIS ALTARA · SAN PEDRO SULA, 24 Jun 2026 7:00 PM confirmed.
-8. ◑ **Real end-to-end smoke test.** *(Mostly done 2026-06-04.)* Validated approve → ticket → QR → confirmation email → `/admin/scan` → `/admin/door` through the **real Claude verifier** (via a mock BAC receipt carrying today's date + order code). **Still TODO before launch:** one run with a genuinely fresh real transfer, and a Tigo Money receipt if you'll accept those. Note the two new customer rules: the REFERENCIA must be in the transfer's Descripción, and payment must be **same-day**.
+8. ✅ **Real end-to-end smoke test.** *(Done 2026-06-04, in PRODUCTION.)* Order `V9FRW5` (seat A7) — a **genuinely fresh real BAC transfer** with the order code in *Detalle* — was **approved on attempt 0** by the live Claude verifier on `cuatro-production.up.railway.app`, producing ticket + QR + receipt + delivered confirmation email, with a valid QR signature. (Tigo Money receipts still untested — only validate that path if you'll accept them.) Customer rules in effect: REFERENCIA in the transfer's Descripción + **same-day** payment.
 
 ### Tier 2 — Hosting + deployment
 
-7. **Pick a backend host.** Railway, Render, or Fly.io are the obvious candidates — managed Postgres + Node in one place with automatic HTTPS. Provision a managed Postgres, set `DATABASE_URL`, run `npx prisma migrate deploy` on first boot, then `npm run db:seed` once to insert the movie + 121 seats.
-8. **Pick a frontend host.** Vercel is the natural Next.js choice — GitHub-connected, automatic HTTPS, edge caching. Free tier handles a single-show scale comfortably.
+> ✅ **COMPLETED 2026-06-04** — fully deployed (Railway backend+Postgres, Vercel frontend, `discocuatro.com`, prod env vars set, rewrite proxy kept). See the "PRODUCTION LAUNCH" session above for the exact setup, gotchas, and the real-purchase smoke test. Items 7–11 below are retained for reference.
+
+7. ✅ **Pick a backend host.** *(Railway.)* Backend at `cuatro-production.up.railway.app`, root dir `backend`, `postinstall: prisma generate`, binds `PORT=8080` (domain target port = 8080). Managed Postgres provisioned; `migrate deploy` + `db:seed` run once from the laptop against the **public** proxy URL.
+8. ✅ **Pick a frontend host.** *(Vercel.)* Root dir `frontend`, custom domain `discocuatro.com`, Deployment Protection disabled for public access.
 9. **Set production env vars** on both hosts:
    - Backend: `DATABASE_URL`, `SESSION_SECRET` (regenerate — `openssl rand -hex 32`), `QR_SIGNING_SECRET` (keep dev or rotate), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `BANK_ACCOUNT_REF`, `BANK_ACCOUNT_NUMBER` (digits-only, the verifier's account gate), `PAYMENT_ARCHIVE_EMAIL`, `FRONTEND_URL=https://discocuatro.com`, `BACKEND_URL=https://api.discocuatro.com` (or your single-origin URL if keeping the rewrite), `NODE_ENV=production`.
    - Frontend: `API_URL=https://api.discocuatro.com` (server-side fetches). Leave `NEXT_PUBLIC_BACKEND_URL=` blank to keep the same-origin pattern via the rewrite, OR set it to the backend URL if you've decided to call directly.
