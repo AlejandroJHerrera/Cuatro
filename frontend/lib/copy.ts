@@ -75,6 +75,8 @@ export const copy = {
       maxNotice: "Máximo 8 butacas por compra.",
       expiredNotice: "Tu reserva ha caducado. Estamos liberando las butacas…",
       conflictNotice: "Alguien tomó esa butaca antes que tú. La quitamos de tu selección.",
+      lostSeatNotice: (label: string) =>
+        `La butaca ${label} ya no está disponible — selecciónala de nuevo.`,
       continue: "CONTINUAR",
       removeAria: (label: string) => `Quitar butaca ${label} de tu reserva.`,
       countSingular: (n: number) => `${n} BUTACA`,
