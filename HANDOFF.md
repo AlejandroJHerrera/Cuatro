@@ -447,6 +447,23 @@ Reworked the payment verifier to **extract-then-judge** and validated it end-to-
 
 The v1 flow is live and a real purchase has completed end-to-end in production. What follows is the remaining punch list.
 
+### 2026-06-16 session — admin seat-management dashboard
+
+Added an **admin-only** surface to manage seats directly, outside the customer payment flow. Spec/plan: [`docs/superpowers/specs/2026-06-16-admin-seat-management-design.md`](docs/superpowers/specs/2026-06-16-admin-seat-management-design.md) + [`docs/superpowers/plans/2026-06-16-admin-seat-management.md`](docs/superpowers/plans/2026-06-16-admin-seat-management.md). Built on branch `admin-seat-management`.
+
+**Architecture:** an admin "block" is just an `Order` with `Tickets` minted outside the payment flow, so seat-blocking, signed QR payloads, the door manifest, and scanning all work unchanged. Reserved vs. sold is **cosmetic** (both take the seat off the market + issue a QR); the label is recorded for reporting only.
+
+- **Schema additions** ([`schema.prisma`](backend/prisma/schema.prisma), migration `20260616120000_admin_seat_management`): `Order.source` (enum `OrderSource { customer | adminReserved | adminSold }`, default `customer`), `Order.recipientEmail` (`String?` — where the QR email goes for admin blocks; customer orders use the account email), and `OrderStatus.cancelled` (a released/voided order; its Tickets are deleted, freeing the seats). Admin blocks set `totalLps = 0` and are **excluded from `revenue.publicRevenueLps`**.
+- **New services** ([`services/adminBlocks.ts`](backend/src/services/adminBlocks.ts)): `adminCreateBlock()` (serializable tx — resolves the single seeded movie, rejects taken/held seats with `seat-conflict:<labels>` / unknown with `missing-seats:<labels>`, mints Order + signed-QR Tickets) and `releaseOrder()` (serializable, idempotent — deletes tickets + receipt, marks `cancelled`; also the manual-refund tool for any real order). Shared email helper [`services/orderEmail.ts`](backend/src/services/orderEmail.ts) `sendConfirmationForOrder(code, toEmail)` (now also used by the customer resend route).
+- **New endpoints** (all `requireRole("admin")`, in [`routes/admin.ts`](backend/src/routes/admin.ts)):
+  - `POST /api/admin/blocks` — `{ seatLabels[], kind:"reserved"|"sold", email, name? }` → 201 `{ code, tickets:[{seat, qrPayload}] }`; 400 invalid, 409 `{conflicts}`, 404 `{missing}`. Sends the confirmation email (best-effort, test-gated).
+  - `POST /api/admin/orders/:code/release` — void + free seats; idempotent.
+  - `POST /api/admin/orders/:code/resend-email` — admin resend for any paid order (targets `recipientEmail ?? user.email`).
+  - `POST /api/admin/tickets/:id/checkin` — `{ redeemed: boolean }` **two-way** scan toggle (replaced the one-way `manual-checkin`, which was removed). Requires `redeemed` to be a boolean (400 otherwise).
+  - `GET /api/admin/door` — extended with `source` per order + a `revenue` block `{ publicRevenueLps, soldPublicSeats, compReservedSeats, scannedSeats, capacity }`.
+- **Frontend:** new [`lib/admin.ts`](frontend/lib/admin.ts) browser client; new page **`/admin/seats`** ([`page.tsx`](frontend/app/admin/seats/page.tsx) + [`AdminSeatsClient.tsx`](frontend/app/admin/seats/AdminSeatsClient.tsx)) — reuses `<SeatGrid>` for multi-select, pick Reservar/Vender + email (required) + optional name, shows the issued QRs on success; enhanced **`/admin/door`** ([`DoorClient.tsx`](frontend/app/admin/door/DoorClient.tsx)) — admin-only revenue panel, two-way scan toggle (DESMARCAR), per-order Reenviar correo + Liberar butacas. Door staff at `/admin/scan` are untouched and never see revenue.
+- **Tests:** backend suite now 60+ passing (10 service tests in `adminBlocks.test.ts`, 19 route tests in `admin.test.ts`). Frontend typechecks clean.
+
 ## Production roadmap
 
 ### Tier 1 — Blockers before any real customer can buy a ticket
