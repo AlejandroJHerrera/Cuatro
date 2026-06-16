@@ -29,6 +29,13 @@ enum OrderStatus {
   paid
   failed
   expired
+  cancelled
+}
+
+enum OrderSource {
+  customer
+  adminReserved
+  adminSold
 }
 
 enum UserRole {
@@ -112,6 +119,8 @@ model Order {
   rejectionReason      String?
   paymentReceipt       PaymentReceipt?
   status          OrderStatus @default(pending)
+  source          OrderSource @default(customer)
+  recipientEmail  String?
   totalLps        Int
   guestName       String // printed on stubs + appears on the door list
   createdAt       DateTime    @default(now())
