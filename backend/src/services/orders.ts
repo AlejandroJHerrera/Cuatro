@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 
 const ORDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const newOrderCode = customAlphabet(ORDER_CODE_ALPHABET, 6);
+export const newOrderCode = customAlphabet(ORDER_CODE_ALPHABET, 6);
 
 export async function findOrCreatePendingOrder(args: {
   userId: string;
