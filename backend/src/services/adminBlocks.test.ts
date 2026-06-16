@@ -111,6 +111,25 @@ test("releaseOrder: idempotent on already-cancelled", async () => {
   await releaseOrder(order.code);
   const again = await releaseOrder(order.code);
   expect(again).toMatchObject({ ok: true, alreadyCancelled: true });
+  expect(await prisma.ticket.count({ where: { orderId: order.id } })).toBe(0);
+});
+
+test("releaseOrder: releases a customer paid order (manual-refund path)", async () => {
+  const customer = await makeUser({ role: "customer" });
+  const movie = await makeMovie();
+  const [seat] = await makeSeats(movie.id, ["A1"]);
+  const order = await prisma.order.create({
+    data: { code: "CUST01", userId: customer.id, status: "paid", source: "customer", totalLps: 1000, guestName: "Cliente" },
+  });
+  await prisma.ticket.create({
+    data: { orderId: order.id, seatId: seat!.id, userId: customer.id, qrPayload: "cust:A1" },
+  });
+
+  const result = await releaseOrder(order.code);
+  expect(result).toMatchObject({ ok: true, alreadyCancelled: false });
+  const after = await prisma.order.findUnique({ where: { code: order.code } });
+  expect(after?.status).toBe("cancelled");
+  expect(await prisma.ticket.count({ where: { orderId: order.id } })).toBe(0);
 });
 
 test("releaseOrder: unknown code → not ok", async () => {

@@ -22,8 +22,11 @@ export async function adminCreateBlock(args: {
 }) {
   return prisma.$transaction(
     async (tx) => {
+      const movie = await tx.movie.findFirst({ select: { id: true } });
+      if (!movie) throw new Error("no-movie");
+
       const seats = await tx.seat.findMany({
-        where: { label: { in: args.seatLabels } },
+        where: { movieId: movie.id, label: { in: args.seatLabels } },
         include: { ticket: { select: { id: true } }, hold: { select: { expiresAt: true } } },
       });
 
@@ -90,5 +93,5 @@ export async function releaseOrder(
     await tx.order.update({ where: { id: order.id }, data: { status: "cancelled" } });
 
     return { ok: true as const, alreadyCancelled: false };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
