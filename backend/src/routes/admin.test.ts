@@ -177,3 +177,42 @@ test("door: doorStaff role → 403 (revenue is admin-only)", async () => {
   const res = await request(appAs(staff)).get("/api/admin/door");
   expect(res.status).toBe(403);
 });
+
+test("checkin: missing redeemed field → 400", async () => {
+  const { ticket } = await seedPaidTicket();
+  const admin = await makeUser({ role: "admin" });
+  const res = await request(appAs(admin)).post(`/api/admin/tickets/${ticket.id}/checkin`).send({});
+  expect(res.status).toBe(400);
+});
+
+test("resend-email: admin resends a paid order → 200", async () => {
+  const admin = await makeUser({ role: "admin" });
+  const movie = await makeMovie();
+  await makeSeats(movie.id, ["A1"]);
+  const { order } = await adminCreateBlock({ adminId: admin.id, seatLabels: ["A1"], kind: "reserved", email: "g@example.com" });
+  const res = await request(appAs(admin)).post(`/api/admin/orders/${order.code}/resend-email`).send();
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({ ok: true });
+});
+
+test("resend-email: non-paid order → 409", async () => {
+  const admin = await makeUser({ role: "admin" });
+  const customer = await makeUser({ role: "customer" });
+  await prisma.order.create({
+    data: { code: "PEND01", userId: customer.id, status: "pending", totalLps: 1000, guestName: "x" },
+  });
+  const res = await request(appAs(admin)).post(`/api/admin/orders/PEND01/resend-email`).send();
+  expect(res.status).toBe(409);
+});
+
+test("resend-email: unknown code → 404", async () => {
+  const admin = await makeUser({ role: "admin" });
+  const res = await request(appAs(admin)).post(`/api/admin/orders/NOPE00/resend-email`).send();
+  expect(res.status).toBe(404);
+});
+
+test("resend-email: customer role → 403", async () => {
+  const customer = await makeUser({ role: "customer" });
+  const res = await request(appAs(customer)).post(`/api/admin/orders/ABC123/resend-email`).send();
+  expect(res.status).toBe(403);
+});

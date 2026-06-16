@@ -125,6 +125,9 @@ adminRouter.post("/orders/:code/resend-email", requireRole("admin"), async (req,
 
 adminRouter.post("/tickets/:id/checkin", requireRole("admin"), async (req, res) => {
   const { redeemed } = req.body as { redeemed?: boolean };
+  if (typeof redeemed !== "boolean") {
+    return res.status(400).json({ error: "redeemed (boolean) required" });
+  }
   const id = req.params.id as string;
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) return res.status(404).json({ error: "not-found" });
